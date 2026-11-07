@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>10×10 Photo Book Studio — Powered by Gemini 3.8 Flash</title>
+<style>
+  :root {
+    --bg: #0f1218;
+    --panel: #181c26;
+    --panel-alt: #1f2533;
+    --border: #2c3446;
+    --ink: #f5f3ee;
+    --muted: #9da7b8;
+    --gold: #d4af6a;
+    --gold-dark: #b38e48;
+    --green: #38b27b;
+    --red: #e05d5d;
+    --amber: #e2a03f;
+    --blue: #4f8df5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5;
+  }
+  header {
+    border-bottom: 1px solid var(--border);
+    background: #131720;
+    padding: 16px 28px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .brand-badge {
+    background: linear-gradient(135deg, var(--gold), var(--gold-dark));
+    color: #12151c;
+    font-weight: 800;
+    font-size: 13px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    letter-spacing: 0.06em;
+  }
+  .brand h1 {
+    font-size: 18px;
+    margin: 0;
+    font-weight: 700;
+  }
+  .brand p {
+    margin: 0;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .container {
+    max-width: 1680px;
+    margin: 0 auto;
+    padding: 20px 24px;
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 24px;
+  }
+  @media (max-width: 1024px) {
+    .container { grid-template-columns: 1fr; }
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .card h2 {
+    margin: 0 0 14px 0;
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--gold);
+  }
+  label {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 600;
+    margin-bottom: 5px;
+    color: #d5dce6;
+  }
+  input[type="text"], input[type="password"], input[type="number"], select {
+    width: 100%;
+    padding: 9px 12px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: #10131a;
+    color: var(--ink);
+    font-size: 13px;
+    margin-bottom: 14px;
+  }
+  .row-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 11px 16px;
+    border-radius: 8px;
+    border: none;
+    font-weight: 700;
+    font-size: 13.5px;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--gold), var(--gold-dark));
+    color: #13161d;
+  }
+  .btn-secondary {
+    background: var(--panel-alt);
+    color: var(--ink);
+    border: 1px solid var(--border);
+    margin-bottom: 12px;
+  }
+  .pill-bar {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .stat-pill {
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+  .stat-pill b {
+    color: var(--gold);
+    font-size: 14px;
+    margin-right: 4px;
+  }
+  .tabs {
+    display: flex;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+  .tab-btn {
+    background: transparent;
+    color: var(--muted);
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 10px 16px;
+    font-weight: 600;
+    font-size: 13.5px;
+    cursor: pointer;
+  }
+  .tab-btn.active {
+    color: var(--gold);
+    border-bottom-color: var(--gold);
+  }
+  .download-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .dl-link {
+    text-decoration: none;
+    background: var(--panel-alt);
+    color: var(--ink);
+    border: 1px solid var(--border);
+    padding: 8px 13px;
+    border-radius: 7px;
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+  .dl-link:hover { border-color: var(--gold); color: var(--gold); }
+
+  /* 10x10 Square Page Preview Canvas */
+  .book-viewer-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .page-nav-btns {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .page-nav-btns button {
+    background: var(--panel-alt);
+    color: var(--ink);
+    border: 1px solid var(--border);
+    padding: 7px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .square-page-stage {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 22px 18px;
+    background: radial-gradient(circle at center, #161a24 0%, #0b0d12 100%);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    overflow-x: auto;
+  }
+  .open-book-spread {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: min(86vw, 1120px);
+    aspect-ratio: 2 / 1;
+    background: #1a1714;
+    padding: 8px;
+    border-radius: 6px;
+    border: 1px solid #3c352c;
+    box-shadow: 0 28px 65px rgba(0, 0, 0, 0.78), 0 4px 14px rgba(0, 0, 0, 0.5);
+  }
+  .open-book-spread .square-page {
+    width: 100%;
+    height: 100%;
+    box-shadow: none;
+  }
+  .open-book-spread .square-page.left-leaf {
+    border-right: 1px solid #d5ccb8;
+    box-shadow: inset -18px 0 26px -12px rgba(0, 0, 0, 0.22);
+  }
+  .open-book-spread .square-page.right-leaf {
+    box-shadow: inset 18px 0 26px -12px rgba(0, 0, 0, 0.22);
+  }
+  .book-spine-crease {
+    position: absolute;
+    top: 8px;
+    bottom: 8px;
+    left: 50%;
+    width: 28px;
+    transform: translateX(-50%);
+    background: linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0) 0%,
+      rgba(0, 0, 0, 0.18) 38%,
+      rgba(15, 12, 8, 0.48) 50%,
+      rgba(255, 255, 255, 0.12) 54%,
+      rgba(0, 0, 0, 0.16) 65%,
+      rgba(0, 0, 0, 0) 100%
+    );
+    pointer-events: none;
+    z-index: 15;
+  }
+  .square-page.endpaper {
+    background: #f2ece1;
+    color: #7c7262;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    font-family: Georgia, "Times New Roman", serif;
+    font-style: italic;
+  }
+  .square-page {
+    position: relative;
+    width: min(76vw, 620px);
+    aspect-ratio: 1 / 1;
+    box-shadow: 0 20px 45px rgba(0, 0, 0, 0.65);
+    overflow: hidden;
+  }
+  .square-page.cover {
+    background: #17191e;
+    color: #faf7f2;
+  }
+  .square-page.interior {
+    background: #faf7f2;
+    color: #1e232a;
+  }
+  .page-trim-border {
+    position: absolute;
+    inset: 3.8%;
+    border: 1px solid rgba(197, 164, 109, 0.55);
+    pointer-events: none;
+  }
+  .page-header-box {
+    position: absolute;
+    top: 5.2%;
+    left: 7.5%;
+    right: 7.5%;
+  }
+  .page-header-box.centered { text-align: center; }
+  .page-eyebrow {
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: #8c6d3f;
+  }
+  .square-page.cover .page-eyebrow { color: #c5a46d; }
+  .page-title-h {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 19px;
+    margin: 2px 0 0 0;
+  }
+  .square-page.cover .page-title-h { font-size: 22px; }
+  .slot-box {
+    position: absolute;
+    background: #fff;
+    padding: 4px;
+    border: 1px solid #ddd5c7;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+  .square-page.cover .slot-box {
+    background: #faf7f2;
+    padding: 6px;
+  }
+  .slot-box img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .slot-badge {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background: rgba(15, 18, 24, 0.82);
+    color: #f5f3ee;
+    font-size: 10px;
+    padding: 3px 7px;
+    border-radius: 4px;
+    border: 1px solid var(--gold);
+    display: none;
+  }
+  .show-overlays .slot-badge { display: block; }
+  .slot-individual-cap {
+    position: absolute;
+    left: 2px;
+    right: 2px;
+    bottom: -17px;
+    font-family: Georgia, "Times New Roman", serif;
+    font-style: italic;
+    font-size: 10px;
+    color: #4a4f55;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .page-footer-box {
+    position: absolute;
+    bottom: 5.0%;
+    left: 8%;
+    right: 8%;
+    text-align: center;
+  }
+  .page-caption-text {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 12px;
+    line-height: 1.35;
+    margin: 0;
+  }
+  .square-page.cover .page-caption-text {
+    font-style: italic;
+    color: #e8e2d5;
+    margin-bottom: 6px;
+  }
+  .page-number-tag {
+    position: absolute;
+    right: 0;
+    bottom: -2px;
+    font-size: 10px;
+    color: #8a8478;
+  }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+  }
+  th, td {
+    padding: 9px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th {
+    color: var(--gold);
+    font-weight: 600;
+    background: #141821;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .badge-selected { background: rgba(56, 178, 123, 0.18); color: var(--green); }
+  .badge-excluded { background: rgba(224, 93, 93, 0.18); color: var(--red); }
+  .status-banner {
+    padding: 12px 14px;
+    border-radius: 8px;
+    background: var(--panel-alt);
+    border-left: 4px solid var(--gold);
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="brand-badge">10×10 STUDIO</span>
+    <div>
+      <h1>AI Photo Book Builder</h1>
+      <p>Deep 1,120–2,240px Analysis • Duplicate &amp; Document Removal • Chronological Clustering • Face-Safe Aesthetic Cropping</p>
+    </div>
+  </div>
+  <div id="modelHeaderTag" style="font-size:12px;color:var(--gold);font-weight:600;">
+    Model: gemini-3.8-flash (Medium Effort)
+  </div>
+</header>
+
+<div class="container">
+  <!-- Left Configuration Column -->
+  <aside>
+    <div class="card">
+      <h2>1. Photo Source Folder</h2>
+      <label for="folderInput">Local Folder Path</label>
+      <input type="text" id="folderInput" placeholder="/Users/amitpoddar/ClaudeProjects/PyhtonLearning/photo_search/myphotos" />
+
+      <h2>2. Gemini 3.8 Flash Settings</h2>
+      <div class="row-2">
+        <div>
+          <label for="modelSelect">Gemini Model</label>
+          <select id="modelSelect">
+            <option value="gemini-3.8-flash" selected>gemini-3.8-flash (Recommended)</option>
+            <option value="gemini-2.5-flash">gemini-2.5-flash (Auto-upgrades to 3.8)</option>
+          </select>
+        </div>
+        <div>
+          <label for="thinkingSelect">Thinking Effort</label>
+          <select id="thinkingSelect">
+            <option value="medium" selected>Medium (Default)</option>
+            <option value="low">Low</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row-2">
+        <div>
+          <label for="resSelect">Photo Resolution</label>
+          <select id="resSelect">
+            <option value="low_384">Very Low / Fastest (384–512 px)</option>
+            <option value="low" selected>Low / Fast (512–768 px • 280 tokens)</option>
+            <option value="medium">Medium / Balanced (768–1,120 px • 560 tokens)</option>
+            <option value="high">High (1,120–1,680 px • 1,120 tokens)</option>
+            <option value="ultra_high">Ultra High (1,680–2,240 px • 2,240 tokens)</option>
+          </select>
+        </div>
+        <div>
+          <label for="maxPhotosSelect">Max Book Photos</label>
+          <select id="maxPhotosSelect">
+            <option value="30">Top 30 Photos (~14 pages • Fastest)</option>
+            <option value="60">Top 60 Photos (~25 pages)</option>
+            <option value="90" selected>Top 90 Photos (~38 pages)</option>
+            <option value="150">Top 150 Photos (~60 pages)</option>
+            <option value="0">All Unique Photos</option>
+          </select>
+        </div>
+      </div>
+
+      <label for="apiKeyInput">Gemini API Key (optional if set in env)</label>
+      <input type="password" id="apiKeyInput" placeholder="Uses GEMINI_API_KEY env var or local vision fallback" />
+
+      <button type="button" class="btn btn-primary" id="buildBtn">
+        📖 Build 10×10 Photo Book
+      </button>
+    </div>
+
+    <div class="card">
+      <h2>Pipeline Checklist</h2>
+      <ul style="margin:0;padding-left:18px;font-size:12.5px;color:var(--muted);">
+        <li>Scales photos to <b>1,120–2,240 px</b> for deep analysis</li>
+        <li>Removes <b>duplicates</b>, <b>similar bursts</b> &amp; <b>documents/receipts</b></li>
+        <li>Generates <b>1–2 line captions</b> (individual &amp; group)</li>
+        <li>Selects best photos in <b>chronological order</b></li>
+        <li>Clusters into thematic chapters by location &amp; activity</li>
+        <li>Picks the <b>Hero Cover Photo</b></li>
+        <li>Arranges <b>1, 2, or 3 photos max</b> per <b>10×10" page</b></li>
+        <li><b>Face-Safe Smart Crop:</b> Never cuts off faces</li>
+      </ul>
+    </div>
+  </aside>
+
+  <!-- Right Main Workspace -->
+  <main>
+    <div id="statusBox" class="status-banner">
+      Enter your personal photo folder path and click <b>"Build 10×10 Photo Book"</b>.
+    </div>
+
+    <div id="resultsContainer" style="display:none;">
+      <div class="pill-bar" id="statsBar"></div>
+      <div class="download-bar" id="downloadBar"></div>
+
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="tabBook">10×10" Interactive Book Preview</button>
+        <button class="tab-btn" data-tab="tabClusters">Chronological Clusters &amp; Captions</button>
+        <button class="tab-btn" data-tab="tabAnalysis">Photo Analysis &amp; Exclusions Report</button>
+      </div>
+
+      <!-- Tab 1: 10x10 Book Viewer -->
+      <div id="tabBook" class="tab-pane">
+        <div class="card">
+          <div class="book-viewer-controls">
+            <div class="page-nav-btns">
+              <button type="button" id="prevPageBtn">← Previous Spread</button>
+              <span id="pageIndicator" style="font-weight:700;font-size:13.5px;">Spread 0 of 0</span>
+              <button type="button" id="nextPageBtn">Next Spread →</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+              <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;color:var(--gold);">
+                <input type="checkbox" id="spreadModeToggle" checked />
+                📖 Side-by-Side Book Spread
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;">
+                <input type="checkbox" id="overlayToggle" checked />
+                Show Face-Safe Crop &amp; Slot Inspector
+              </label>
+            </div>
+          </div>
+          <div id="spreadQuickBar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;"></div>
+          <div class="square-page-stage" id="pageStage"></div>
+        </div>
+      </div>
+
+      <!-- Tab 2: Clusters -->
+      <div id="tabClusters" class="tab-pane" style="display:none;">
+        <div class="card">
+          <h2>Chronological Story Clusters &amp; Group Captions</h2>
+          <div id="clustersList"></div>
+        </div>
+      </div>
+
+      <!-- Tab 3: Full Photo Analysis Table -->
+      <div id="tabAnalysis" class="tab-pane" style="display:none;">
+        <div class="card">
+          <h2>All Analyzed Photos (Selected vs. Excluded Duplicates, Similar &amp; Documents)</h2>
+          <div style="overflow-x:auto;">
+            <table id="analysisTable">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Filename</th>
+                  <th>Captured At</th>
+                  <th>Analysis Px</th>
+                  <th>Scores (Comp / Cover)</th>
+                  <th>Faces</th>
+                  <th>Theme / Landmark</th>
+                  <th>Caption (1–2 Lines) / Exclusion Reason</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  let currentBook = null;
+  let currentSpreadIndex = 0;
+
+  const folderInput = document.getElementById('folderInput');
+  const buildBtn = document.getElementById('buildBtn');
+  const statusBox = document.getElementById('statusBox');
+  const resultsContainer = document.getElementById('resultsContainer');
+  const statsBar = document.getElementById('statsBar');
+  const downloadBar = document.getElementById('downloadBar');
+  const pageStage = document.getElementById('pageStage');
+  const pageIndicator = document.getElementById('pageIndicator');
+  const overlayToggle = document.getElementById('overlayToggle');
+  const spreadModeToggle = document.getElementById('spreadModeToggle');
+  const spreadQuickBar = document.getElementById('spreadQuickBar');
+
+  async function initConfig() {
+    const savedFolder = localStorage.getItem('photobook_folder_path');
+    if (savedFolder && !savedFolder.includes('sample_photos') && !savedFolder.includes('france')) {
+      folderInput.value = savedFolder;
+    } else {
+      localStorage.removeItem('photobook_folder_path');
+    }
+    try {
+      const res = await fetch('/api/config', { cache: 'no-store' });
+      const cfg = await res.json();
+      if (!folderInput.value && cfg.default_folder_path) {
+        folderInput.value = cfg.default_folder_path;
+      }
+    } catch (e) {}
+    try {
+      const latestRes = await fetch('/api/books/latest', { cache: 'no-store' });
+      if (latestRes.ok) {
+        const latestBook = await latestRes.json();
+        currentBook = latestBook;
+        // Open directly to Spread 1 (Pages 1 & 2 side-by-side) if interior pages exist
+        currentSpreadIndex = latestBook.pages.length > 1 ? 1 : 0;
+        renderBookResults(currentBook);
+        const noteHtml = currentBook.model_note ? ` <span style="color:var(--gold)">(${currentBook.model_note})</span>` : '';
+        statusBox.innerHTML = `📖 Loaded <b>${currentBook.title}</b> (${currentBook.total_selected} curated photos across ${currentBook.pages.length} 10×10" pages, side-by-side view).${noteHtml}`;
+      }
+    } catch (e) {}
+  }
+
+  buildBtn.addEventListener('click', async () => {
+    const folder = folderInput.value.trim();
+    if (!folder) {
+      statusBox.innerHTML = '<span style="color:var(--red)">Please enter a local folder path containing your photos.</span>';
+      return;
+    }
+    localStorage.setItem('photobook_folder_path', folder);
+    buildBtn.disabled = true;
+    statusBox.innerHTML = '⏳ Starting scan (including .HEIC, .JPG, .PNG)...';
+    try {
+      const resMode = document.getElementById('resSelect').value;
+      const resBoundsMap = {
+        low_384: [384, 512],
+        low: [512, 768],
+        medium: [768, 1120],
+        high: [1120, 1680],
+        ultra_high: [1120, 2240],
+      };
+      const [minPx, maxPx] = resBoundsMap[resMode] || [1120, 2240];
+      const payload = {
+        folder_path: folder,
+        model: document.getElementById('modelSelect').value,
+        thinking_level: document.getElementById('thinkingSelect').value,
+        media_resolution: resMode,
+        min_analysis_px: minPx,
+        max_analysis_px: maxPx,
+        max_book_photos: parseInt(document.getElementById('maxPhotosSelect').value, 10),
+        api_key: document.getElementById('apiKeyInput').value.trim() || null,
+      };
+      const res = await fetch('/api/build-stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Build failed');
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const parts = buf.split('\n\n');
+        buf = parts.pop() || '';
+        for (const chunk of parts) {
+          const line = chunk.trim();
+          if (!line.startsWith('data:')) continue;
+          const evt = JSON.parse(line.slice(5).trim());
+          if (evt.type === 'progress') {
+            statusBox.innerHTML = `⏳ <b>[${evt.percent}%]</b> ${escapeHtml(evt.message)}`;
+          } else if (evt.type === 'error') {
+            throw new Error(evt.detail || 'Build failed');
+          } else if (evt.type === 'complete') {
+            currentBook = evt.book;
+            currentSpreadIndex = currentBook.pages.length > 1 ? 1 : 0;
+            renderBookResults(currentBook);
+            const noteHtml = currentBook.model_note ? ` <span style="color:var(--gold)">(${currentBook.model_note})</span>` : '';
+            statusBox.innerHTML = `✅ Scanned <b>${currentBook.total_scanned} photos</b> (.HEIC/.JPG/.PNG) → Built <b>${currentBook.title}</b> (${currentBook.total_selected} curated photos across ${currentBook.pages.length} 10×10" pages) using <code>${currentBook.model_used}</code>.${noteHtml}`;
+          }
+        }
+      }
+    } catch (err) {
+      statusBox.innerHTML = `<span style="color:var(--red)">❌ ${err.message}</span>`;
+    } finally {
+      buildBtn.disabled = false;
+    }
+  });
+
+  function renderBookResults(book) {
+    resultsContainer.style.display = 'block';
+    document.getElementById('modelHeaderTag').textContent =
+      `Model: ${book.model_used} (${book.thinking_level} effort • ${book.media_resolution} res)`;
+
+    statsBar.innerHTML = `
+      <div class="stat-pill"><b>${book.total_scanned}</b> Scanned</div>
+      <div class="stat-pill"><b>${book.total_selected}</b> Selected (Chronological)</div>
+      <div class="stat-pill"><b>${book.total_excluded_duplicates}</b> Duplicates Removed</div>
+      <div class="stat-pill"><b>${book.total_excluded_similar}</b> Similar Burst Removed</div>
+      <div class="stat-pill"><b>${book.total_excluded_documents}</b> Documents Removed</div>
+      <div class="stat-pill"><b>${book.pages.length}</b> 10×10" Pages</div>
+      <div class="stat-pill"><b>${book.hero_cover_photo_id}</b> Hero Cover</div>
+    `;
+
+    const baseUrl = `/api/books/${encodeURIComponent(book.book_id)}/files`;
+    downloadBar.innerHTML = `
+      <a class="dl-link" href="${baseUrl}/photobook_10x10.pdf" target="_blank">⬇️ Download 10×10" PDF Book (photobook_10x10.pdf)</a>
+      <a class="dl-link" href="${baseUrl}/photobook.html" target="_blank">🌐 Open Standalone 10×10" HTML Book</a>
+      <a class="dl-link" href="${baseUrl}/photo_analysis.json" target="_blank">📄 Download Analysis JSON (photo_analysis.json)</a>
+      <a class="dl-link" href="${baseUrl}/photo_analysis.md" target="_blank">📝 Download Analysis Markdown (photo_analysis.md)</a>
+    `;
+
+    renderCurrentPage();
+    renderClusters(book);
+    renderAnalysisTable(book);
+  }
+
+  function buildBookSpreads(book) {
+    if (!book || !book.pages || !book.pages.length) return [];
+    if (!spreadModeToggle.checked) {
+      return book.pages.map(pg => ({
+        label: pg.page_type === 'cover' ? 'Cover' : `Page ${pg.page_number}`,
+        title: pg.page_type === 'cover'
+          ? `Front Cover (Page 0 of ${book.pages.length - 1} interior)`
+          : `Page ${pg.page_number} of ${book.pages.length - 1} (${pg.slots.length} photo${pg.slots.length > 1 ? 's' : ''} • ${pg.template_id})`,
+        isSingle: true,
+        left: pg,
+        right: null,
+      }));
+    }
+    const spreads = [];
+    const coverPage = book.pages[0];
+    const interiorPages = book.pages.slice(1);
+    spreads.push({
+      label: 'Front Cover',
+      title: `Front Cover • ${book.title}`,
+      isSingle: false,
+      left: { page_type: 'endpaper_front' },
+      right: coverPage,
+    });
+    for (let i = 0; i < interiorPages.length; i += 2) {
+      const leftPg = interiorPages[i];
+      const rightPg = interiorPages[i + 1] || { page_type: 'endpaper_back' };
+      const lbl = interiorPages[i + 1]
+        ? `Pages ${leftPg.page_number}–${rightPg.page_number}`
+        : `Page ${leftPg.page_number}`;
+      spreads.push({
+        label: lbl,
+        title: `${lbl} of ${interiorPages.length} interior pages`,
+        isSingle: false,
+        left: leftPg,
+        right: rightPg,
+      });
+    }
+    return spreads;
+  }
+
+  function renderSinglePageLeaf(pg, leafSideClass, baseUrl, overlayClass) {
+    if (!pg) return '';
+    if (pg.page_type === 'endpaper_front') {
+      return `
+        <div class="square-page endpaper ${leafSideClass}">
+          <div class="page-trim-border"></div>
+          <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#9b8e78;margin-bottom:8px;">10×10 INCH HARDCOVER EDITION</div>
+          <div style="font-size:18px;color:#4a4338;font-weight:700;text-align:center;padding:0 12%;">${escapeHtml(currentBook.title)}</div>
+          <div style="font-size:12px;color:#827766;margin-top:6px;">${escapeHtml(currentBook.subtitle)}</div>
+        </div>
+      `;
+    }
+    if (pg.page_type === 'endpaper_back') {
+      return `
+        <div class="square-page endpaper ${leafSideClass}">
+          <div class="page-trim-border"></div>
+          <div style="font-size:13px;color:#7c7262;">— Finis —</div>
+          <div style="font-size:11px;color:#9b8e78;margin-top:4px;">${currentBook.total_selected} Curated Moments</div>
+        </div>
+      `;
+    }
+    if (pg.page_type === 'cover') {
+      const s = pg.slots[0];
+      return `
+        <div class="square-page cover ${leafSideClass} ${overlayClass}">
+          <div class="page-trim-border"></div>
+          <div class="page-header-box centered">
+            <div class="page-eyebrow">CURATED 10×10 INCH PHOTO BOOK</div>
+            <h3 class="page-title-h">${escapeHtml(pg.chapter_title || currentBook.title)}</h3>
+          </div>
+          <div class="slot-box" style="left:${s.x_in*10}%;top:${s.y_in*10}%;width:${s.width_in*10}%;height:${s.height_in*10}%;">
+            <img src="${baseUrl}/${s.cropped_image_relpath}" alt="${escapeHtml(s.filename)}" />
+            <div class="slot-badge">HERO COVER • ${escapeHtml(s.filename)} • Faces: ${s.faces_count} (100% preserved)</div>
+          </div>
+          <div class="page-footer-box">
+            <p class="page-caption-text">${escapeHtml(s.caption)}</p>
+            <div style="font-size:11px;color:var(--gold);letter-spacing:0.06em;">${escapeHtml(pg.group_caption || currentBook.subtitle)}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    const slotsHtml = pg.slots.map((s, idx) => `
+      <div class="slot-box" style="left:${s.x_in*10}%;top:${s.y_in*10}%;width:${s.width_in*10}%;height:${s.height_in*10}%;">
+        <img src="${baseUrl}/${s.cropped_image_relpath}" alt="${escapeHtml(s.filename)}" />
+        <div class="slot-badge">Slot ${idx + 1} (${s.width_in}×${s.height_in}in) • Faces: ${s.faces_count} (${s.faces_preserved ? 'Safe' : 'Adjusted'})</div>
+        ${pg.slots.length > 1 ? `<div class="slot-individual-cap">${escapeHtml(s.caption)}</div>` : ''}
+      </div>
+    `).join('');
+
+    const headerHtml = pg.chapter_title
+      ? `<div class="page-header-box" style="border-bottom:1px solid #d4c7b0;padding-bottom:4px;">
+           <div class="page-eyebrow">CHAPTER</div>
+           <h3 class="page-title-h" style="font-size:15px;">${escapeHtml(pg.chapter_title)}</h3>
+         </div>`
+      : `<div class="page-header-box"><span style="font-family:Georgia,serif;font-style:italic;font-size:11px;color:#8a8478;">${escapeHtml(currentBook.title)}</span></div>`;
+
+    const footerCap = pg.group_caption || (pg.slots[0] ? pg.slots[0].caption : '');
+    const pageNumPos = leafSideClass === 'left-leaf' ? 'left: 0; right: auto;' : 'right: 0; left: auto;';
+    return `
+      <div class="square-page interior ${leafSideClass} ${overlayClass}">
+        <div class="page-trim-border"></div>
+        ${headerHtml}
+        ${slotsHtml}
+        <div class="page-footer-box">
+          <p class="page-caption-text" style="font-size:11px;">${escapeHtml(footerCap)}</p>
+          <span class="page-number-tag" style="${pageNumPos}">Page ${pg.page_number}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderCurrentPage() {
+    if (!currentBook || !currentBook.pages.length) return;
+    const spreads = buildBookSpreads(currentBook);
+    if (currentSpreadIndex >= spreads.length) currentSpreadIndex = 0;
+    if (currentSpreadIndex < 0) currentSpreadIndex = spreads.length - 1;
+
+    const sp = spreads[currentSpreadIndex];
+    pageIndicator.textContent = `${sp.title} (Spread ${currentSpreadIndex + 1} of ${spreads.length})`;
+
+    document.getElementById('prevPageBtn').textContent = spreadModeToggle.checked ? '← Previous Spread' : '← Previous Page';
+    document.getElementById('nextPageBtn').textContent = spreadModeToggle.checked ? 'Next Spread →' : 'Next Page →';
+
+    spreadQuickBar.innerHTML = spreads.map((item, idx) => {
+      const isAct = idx === currentSpreadIndex;
+      const bg = isAct ? 'background:var(--gold);color:#12151c;border-color:var(--gold);' : 'background:var(--panel-alt);color:var(--muted);border-color:var(--border);';
+      return `<button type="button" onclick="jumpToSpread(${idx})" style="${bg}border:1px solid;padding:4px 9px;border-radius:5px;font-size:11.5px;font-weight:600;cursor:pointer;">${escapeHtml(item.label)}</button>`;
+    }).join('');
+
+    const baseUrl = `/api/books/${encodeURIComponent(currentBook.book_id)}/files`;
+    const overlayClass = overlayToggle.checked ? 'show-overlays' : '';
+
+    if (sp.isSingle) {
+      pageStage.innerHTML = renderSinglePageLeaf(sp.left, '', baseUrl, overlayClass);
+      return;
+    }
+
+    const leftHtml = renderSinglePageLeaf(sp.left, 'left-leaf', baseUrl, overlayClass);
+    const rightHtml = renderSinglePageLeaf(sp.right, 'right-leaf', baseUrl, overlayClass);
+    pageStage.innerHTML = `
+      <div class="open-book-spread">
+        ${leftHtml}
+        ${rightHtml}
+        <div class="book-spine-crease"></div>
+      </div>
+    `;
+  }
+
+  window.jumpToSpread = function(idx) {
+    currentSpreadIndex = idx;
+    renderCurrentPage();
+  };
+
+  document.getElementById('prevPageBtn').addEventListener('click', () => {
+    if (!currentBook) return;
+    const spreads = buildBookSpreads(currentBook);
+    currentSpreadIndex = (currentSpreadIndex - 1 + spreads.length) % spreads.length;
+    renderCurrentPage();
+  });
+
+  document.getElementById('nextPageBtn').addEventListener('click', () => {
+    if (!currentBook) return;
+    const spreads = buildBookSpreads(currentBook);
+    currentSpreadIndex = (currentSpreadIndex + 1) % spreads.length;
+    renderCurrentPage();
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (!currentBook || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+    if (e.key === 'ArrowLeft') {
+      document.getElementById('prevPageBtn').click();
+    } else if (e.key === 'ArrowRight') {
+      document.getElementById('nextPageBtn').click();
+    }
+  });
+
+  overlayToggle.addEventListener('change', renderCurrentPage);
+  spreadModeToggle.addEventListener('change', () => {
+    currentSpreadIndex = 0;
+    renderCurrentPage();
+  });
+
+  function renderClusters(book) {
+    const container = document.getElementById('clustersList');
+    container.innerHTML = book.clusters.map(c => `
+      <div style="padding:14px;border:1px solid var(--border);border-radius:8px;margin-bottom:12px;background:var(--panel-alt);">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <strong style="color:var(--gold);font-size:14px;">${escapeHtml(c.title)}</strong>
+          <span style="font-size:12px;color:var(--muted);">${escapeHtml(c.date_range_label)} • ${c.photo_ids.length} photo(s)</span>
+        </div>
+        <p style="margin:6px 0;font-family:Georgia,serif;font-style:italic;font-size:13.5px;">"${escapeHtml(c.group_caption)}"</p>
+        <div style="font-size:11.5px;color:var(--muted);">Photos: ${c.photo_ids.map(id => `<code>${id}</code>`).join(', ')}</div>
+      </div>
+    `).join('');
+  }
+
+  function renderAnalysisTable(book) {
+    const tbody = document.querySelector('#analysisTable tbody');
+    tbody.innerHTML = book.photos.map(p => {
+      const isSelected = p.status === 'selected';
+      const badgeCls = isSelected ? 'badge-selected' : 'badge-excluded';
+      const detail = isSelected
+        ? escapeHtml(p.analysis.caption)
+        : `<span style="color:var(--red)">${escapeHtml(p.exclusion_reason || p.status)}</span>`;
+      return `
+        <tr>
+          <td><span class="badge ${badgeCls}">${escapeHtml(p.status)}</span></td>
+          <td><b>${escapeHtml(p.filename)}</b><br><span style="font-size:11px;color:var(--muted)">${p.photo_id}</span></td>
+          <td>${escapeHtml(p.captured_at)}</td>
+          <td><code>${p.analysis_width}×${p.analysis_height}</code><br><span style="font-size:11px;color:var(--muted)">orig: ${p.original_width}×${p.original_height}</span></td>
+          <td><b>${p.analysis.composite_score}</b> / 10<br><span style="font-size:11px;color:var(--muted)">cover: ${p.analysis.cover_worthiness_score}</span></td>
+          <td>${p.analysis.faces_boxes.length} face(s)</td>
+          <td>${escapeHtml(p.analysis.location_or_landmark || p.analysis.event_theme || '—')}</td>
+          <td>${detail}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  // Tab switching
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-pane').forEach(p => p.style.display = 'none');
+      btn.classList.add('active');
+      document.getElementById(btn.dataset.tab).style.display = 'block';
+    });
+  });
+
+  function escapeHtml(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  initConfig();
+</script>
+</body>
+</html>

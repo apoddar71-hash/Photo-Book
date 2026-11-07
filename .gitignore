@@ -1,0 +1,24 @@
+# Secrets & Environment
+.env
+.env.*
+!.env.example
+
+# Generated photo books, caches & personal photos
+output/
+sample_photos/
+*.pdf
+
+# Python virtual environments & caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# macOS / IDE
+.DS_Store
+.idea/
+.vscode/

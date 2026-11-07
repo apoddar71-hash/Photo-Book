@@ -1,0 +1,27 @@
+[project]
+name = "photo-book-builder"
+version = "0.1.0"
+description = "AI-powered 10x10 inch Photo Book Builder using Gemini 3.8 Flash (Medium effort)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "google-genai>=2.30.1",
+    "pillow>=10.4.0",
+    "pillow-heif>=0.20.0",
+    "pydantic>=2.10.0",
+    "python-dotenv>=1.0.1",
+    "python-multipart>=0.0.12",
+    "reportlab>=4.2.0",
+    "uvicorn>=0.32.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.27.0",
+    "pytest>=8.3.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
