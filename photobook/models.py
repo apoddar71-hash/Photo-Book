@@ -41,6 +41,10 @@ class GeminiPhotoAnalysis(BaseModel):
         default=False,
         description="True if the photo is severely blurry, accidental pocket shot, or unusable.",
     )
+    has_sideways_or_inverted_orientation: bool = Field(
+        default=False,
+        description="True if a person's face/head or the horizon/scene is oriented sideways (rotated 90 degrees) or upside-down.",
+    )
     aesthetic_score: float = Field(
         default=7.5,
         ge=1.0,
@@ -103,6 +107,36 @@ class GeminiPhotoAnalysis(BaseModel):
             + 0.25 * self.sharpness_score,
             2,
         )
+
+
+class BatchPhotoAnalysisItem(GeminiPhotoAnalysis):
+    """Single photo analysis entry inside a multi-photo batch response."""
+
+    photo_id: str = Field(description="Exact photo_id matching the input photo in the batch.")
+
+
+class BatchGeminiPhotoAnalysis(BaseModel):
+    """Structured output schema for multi-photo batch vision analysis."""
+
+    items: list[BatchPhotoAnalysisItem] = Field(
+        default_factory=list,
+        description="Analysis results for each photo in the batch, matched by photo_id.",
+    )
+
+
+class ClusterRefinementItem(BaseModel):
+    """Refined chapter title and 1-2 line group caption for a photo cluster."""
+
+    cluster_id: str = Field(description="Exact cluster_id matching the input cluster.")
+    title: str = Field(description="Evocative chapter title for this chronological group of photos.")
+    group_caption: str = Field(description="Warm 1 to 2 line max summary caption for this group of photos.")
+
+
+class BookCurationRefinement(BaseModel):
+    """Fast Stage-2 curation response from the text/curation model."""
+
+    book_title: str = Field(description="Cohesive, memorable title for the 10x10 photo book.")
+    clusters: list[ClusterRefinementItem] = Field(default_factory=list)
 
 
 PhotoStatus = Literal[
@@ -221,6 +255,12 @@ class PhotoBookResult(BaseModel):
     created_at: str
     model_requested: str
     model_used: str
+    curation_model_used: str = "gemini-2.5-flash-lite"
+    hero_model_used: str = "gemini-3.8-flash"
+    layout_model_used: str = "local_geometric"
+    batch_size: int = 6
+    build_duration_seconds: float = 0.0
+    stage_timings: dict[str, float] = Field(default_factory=dict)
     model_note: Optional[str] = None
     thinking_level: str = "medium"
     media_resolution: str = "high"

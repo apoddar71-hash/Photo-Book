@@ -289,3 +289,125 @@ def test_web_ui_endpoints(tmp_path: Path):
     r_pdf = client.get(f"/api/books/{book_id}/files/photobook_10x10.pdf")
     assert r_pdf.status_code == 200
     assert r_pdf.content.startswith(b"%PDF-")
+
+
+def test_multi_model_and_batch_processing(tmp_path: Path):
+    """Verify multi-photo batch vision processing and per-stage model parameters."""
+    test_folder = _create_raw_photos_test_folder(tmp_path / "batch_photos")
+    client = TestClient(app)
+
+    r_build = client.post(
+        "/api/build",
+        json={
+            "folder_path": str(test_folder),
+            "model": "gemini-3.8-flash",
+            "thinking_level": "low",
+            "curation_model": "gemini-2.5-flash-lite",
+            "hero_model": "none",
+            "batch_size": 8,
+            "media_resolution": "low",
+            "min_analysis_px": 512,
+            "max_analysis_px": 768,
+        },
+    )
+    assert r_build.status_code == 200
+    book_data = r_build.json()
+    assert book_data["curation_model_used"] == "gemini-2.5-flash-lite"
+    assert book_data["hero_model_used"] == "none"
+    assert book_data["batch_size"] == 8
+    assert book_data["total_selected"] == 4
+
+
+def test_hero_cover_prefers_scenic_and_excludes_sideways_faces():
+    """Verify scenic views are preferred over portraits for the hero cover (with fallback if none available)
+    and sideways/upside-down face orientations are excluded."""
+    from photobook.analyzer import deduplicate_and_filter_photos, select_hero_cover_photo
+    from photobook.models import PhotoMetadata
+
+    portrait_photo = PhotoMetadata(
+        photo_id="p_portrait",
+        filename="portrait.jpg",
+        file_path="/tmp/portrait.jpg",
+        original_width=1200,
+        original_height=1600,
+        analysis_width=1200,
+        analysis_height=1600,
+        analysis_path="/tmp/portrait.jpg",
+        captured_at="2026-08-10T10:00:00",
+        captured_timestamp=1700000000.0,
+        dhash="0000000000000001",
+        ahash="0000000000000001",
+        color_signature=[0.5, 0.5, 0.5],
+        analysis=GeminiPhotoAnalysis(
+            aesthetic_score=8.8,
+            sharpness_score=8.8,
+            emotional_score=9.0,
+            cover_worthiness_score=8.9,
+            subject_summary="Close-up portrait of a smiling person",
+            caption="Bright smiles in the morning sun.",
+            people_count=1,
+            faces_boxes=[BoundingBox(ymin=200, xmin=300, ymax=500, xmax=700, label="face")],
+        ),
+    )
+    scenic_photo = PhotoMetadata(
+        photo_id="p_scenic",
+        filename="scenic.jpg",
+        file_path="/tmp/scenic.jpg",
+        original_width=1600,
+        original_height=1200,
+        analysis_width=1600,
+        analysis_height=1200,
+        analysis_path="/tmp/scenic.jpg",
+        captured_at="2026-08-10T11:00:00",
+        captured_timestamp=1700003600.0,
+        dhash="ffffffff00000000",
+        ahash="ffffffff00000000",
+        color_signature=[0.2, 0.4, 0.8],
+        analysis=GeminiPhotoAnalysis(
+            aesthetic_score=8.2,
+            sharpness_score=8.4,
+            emotional_score=8.0,
+            cover_worthiness_score=8.0,
+            subject_summary="Panoramic caldera cliffside view under blue sky",
+            caption="Sunlit rooftops overlooking the dramatic caldera slopes.",
+            people_count=0,
+            faces_boxes=[],
+        ),
+    )
+    sideways_photo = PhotoMetadata(
+        photo_id="p_sideways",
+        filename="sideways.jpg",
+        file_path="/tmp/sideways.jpg",
+        original_width=1600,
+        original_height=1200,
+        analysis_width=1600,
+        analysis_height=1200,
+        analysis_path="/tmp/sideways.jpg",
+        captured_at="2026-08-10T12:00:00",
+        captured_timestamp=1700007200.0,
+        dhash="0f0f0f0f0f0f0f0f",
+        ahash="0f0f0f0f0f0f0f0f",
+        color_signature=[0.8, 0.2, 0.2],
+        analysis=GeminiPhotoAnalysis(
+            aesthetic_score=7.5,
+            sharpness_score=8.0,
+            emotional_score=7.5,
+            cover_worthiness_score=5.5,
+            subject_summary="Sideways/portrait orientation of a young woman smiling on a rocky overlook",
+            caption="Smiling at the overlook.",
+            people_count=1,
+            faces_boxes=[BoundingBox(ymin=300, xmin=300, ymax=600, xmax=600, label="face")],
+        ),
+    )
+
+    kept = deduplicate_and_filter_photos([portrait_photo, scenic_photo, sideways_photo])
+    assert [p.photo_id for p in kept] == ["p_portrait", "p_scenic"]
+    assert sideways_photo.status == "excluded_low_quality"
+
+    # Scenic photo is chosen even when portrait had a higher raw score
+    hero = select_hero_cover_photo(kept)
+    assert hero.photo_id == "p_scenic"
+
+    # Fallback: when no scenic photo is available, chooses best portrait
+    hero_fallback = select_hero_cover_photo([portrait_photo])
+    assert hero_fallback.photo_id == "p_portrait"

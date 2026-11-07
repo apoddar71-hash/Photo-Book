@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
@@ -12,6 +13,7 @@ from photobook.analyzer import (
     analyze_photos_with_gemini,
     curate_clusters_and_pages,
     deduplicate_and_filter_photos,
+    is_sideways_or_inverted_photo,
     pre_analyze_all_photos,
 )
 from photobook.ingestion import MAX_ANALYSIS_PX, MIN_ANALYSIS_PX, scan_and_prepare_photos
@@ -24,6 +26,10 @@ def build_photo_book(
     output_root: str | Path | None = None,
     model: str = DEFAULT_MODEL,
     thinking_level: str = "medium",
+    curation_model: str = "gemini-2.5-flash-lite",
+    hero_model: str = "gemini-3.8-flash",
+    layout_model: str = "local_geometric",
+    batch_size: int = 6,
     media_resolution: str = "high",
     min_analysis_px: int = MIN_ANALYSIS_PX,
     max_analysis_px: int = MAX_ANALYSIS_PX,
@@ -36,6 +42,9 @@ def build_photo_book(
     Strictly reads ONLY the image files in `folder_path` and saves all generated outputs
     into a newly created subfolder inside `/Users/amitpoddar/.gemini/antigravity/scratch/photo-book-builder/output`.
     """
+    t_start = time.perf_counter()
+    stage_timings: dict[str, float] = {}
+
     src_folder = Path(folder_path).expanduser().resolve()
     base_out = (
         Path(output_root).expanduser().resolve()
@@ -57,6 +66,7 @@ def build_photo_book(
             pct = 3 + int(round((idx / max(1, total)) * 27))
             progress_cb(f"Step 1/5: {msg}", pct, 100)
 
+    t0 = time.perf_counter()
     photos = scan_and_prepare_photos(
         folder_path=src_folder,
         work_dir=book_dir,
@@ -64,12 +74,14 @@ def build_photo_book(
         max_px=max_analysis_px,
         progress_cb=_scan_progress,
     )
+    stage_timings["scan_s"] = round(time.perf_counter() - t0, 2)
 
     def _pre_progress(msg: str, idx: int, total: int) -> None:
         if progress_cb:
             pct = 30 + int(round((idx / max(1, total)) * 20))
             progress_cb(f"Step 2/5: {msg}", pct, 100)
 
+    t1 = time.perf_counter()
     pre_analyze_all_photos(
         photos=photos,
         progress_cb=_pre_progress,
@@ -83,48 +95,62 @@ def build_photo_book(
         )
 
     selected = deduplicate_and_filter_photos(photos, max_book_photos=max_book_photos)
+    stage_timings["dedup_s"] = round(time.perf_counter() - t1, 2)
 
     def _gemini_progress(msg: str, idx: int, total: int) -> None:
         if progress_cb:
             pct = 55 + int(round((idx / max(1, total)) * 22))
             progress_cb(f"Step 3/5: {msg}", pct, 100)
 
+    t2 = time.perf_counter()
     model_used, model_note = analyze_photos_with_gemini(
         photos=selected,
         model=model,
         thinking_level=thinking_level,
         media_resolution=media_resolution,
+        batch_size=batch_size,
         api_key=api_key,
         progress_cb=_gemini_progress,
     )
+    stage_timings["vision_s"] = round(time.perf_counter() - t2, 2)
 
-    # Filter out any photos newly marked as documents or blurry by Gemini 3.8 Flash
+    # Filter out any photos newly marked as documents, blurry, or sideways/inverted by Gemini
     post_selected = []
     for p in selected:
+        is_sideways, sideways_reason = is_sideways_or_inverted_photo(p)
         if p.analysis.is_document_or_screenshot:
             p.status = "excluded_document"
             p.exclusion_reason = p.analysis.document_reason or "Detected document, receipt, or screenshot"
         elif p.analysis.is_blurry_or_flawed:
             p.status = "excluded_low_quality"
             p.exclusion_reason = f"Low technical quality or motion blur (sharpness {p.analysis.sharpness_score}/10)"
+        elif is_sideways:
+            p.status = "excluded_low_quality"
+            p.exclusion_reason = sideways_reason or "Sideways or inverted face/scene orientation"
         else:
             post_selected.append(p)
     selected = post_selected
 
     if progress_cb:
         progress_cb(
-            f"Step 4/5: Clustering {len(selected)} best chronological photos, selecting Hero cover & face-safe cropping...",
+            f"Step 4/5: Clustering {len(selected)} photos ({curation_model}), refining Hero cover ({hero_model}) & face-safe cropping...",
             80,
             100,
         )
 
+    t3 = time.perf_counter()
     title, subtitle, hero_id, clusters, pages = curate_clusters_and_pages(
         selected_photos=selected,
         work_dir=book_dir,
         model=model_used,
         thinking_level=thinking_level,
+        curation_model=curation_model,
+        hero_model=hero_model,
+        layout_model=layout_model,
+        batch_size=batch_size,
         api_key=api_key,
     )
+    stage_timings["curation_layout_s"] = round(time.perf_counter() - t3, 2)
 
     analysis_json_path = book_dir / "photo_analysis.json"
     analysis_md_path = book_dir / "photo_analysis.md"
@@ -139,6 +165,12 @@ def build_photo_book(
         created_at=datetime.now().isoformat(timespec="seconds"),
         model_requested=model,
         model_used=model_used,
+        curation_model_used=curation_model,
+        hero_model_used=hero_model,
+        layout_model_used=layout_model,
+        batch_size=batch_size,
+        build_duration_seconds=round(time.perf_counter() - t_start, 2),
+        stage_timings=stage_timings,
         model_note=model_note,
         thinking_level=thinking_level,
         media_resolution=media_resolution,
@@ -164,11 +196,19 @@ def build_photo_book(
     if progress_cb:
         progress_cb("Step 5/5: Rendering 10×10 inch PDF, interactive HTML book & analysis files...", 92, 100)
 
-    save_analysis_files(result)
+    t4 = time.perf_counter()
     render_html_photobook(result, html_preview_path)
     render_pdf_photobook(result, pdf_path)
+    stage_timings["render_s"] = round(time.perf_counter() - t4, 2)
+    result.build_duration_seconds = round(time.perf_counter() - t_start, 2)
+    result.stage_timings = stage_timings
+    save_analysis_files(result)
 
     if progress_cb:
-        progress_cb("Complete! 10×10 inch Photo Book and Analysis Report ready.", 100, 100)
+        progress_cb(
+            f"Complete in {result.build_duration_seconds}s! 10×10 inch Photo Book and Analysis Report ready.",
+            100,
+            100,
+        )
 
     return result

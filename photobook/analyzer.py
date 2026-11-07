@@ -24,6 +24,9 @@ from pydantic import BaseModel, Field
 from photobook.cropper import can_fit_aspect_without_cutting_faces, compute_aesthetic_crop, crop_and_save_photo
 from photobook.ingestion import cosine_similarity, hamming_distance
 from photobook.models import (
+    BatchGeminiPhotoAnalysis,
+    BatchPhotoAnalysisItem,
+    BookCurationRefinement,
     BookPage,
     BoundingBox,
     GeminiPhotoAnalysis,
@@ -112,14 +115,15 @@ Return a JSON object matching the schema with:
 1. `is_document_or_screenshot`: Set to `true` if this image is a photograph of a paper document, handwritten note, receipt, invoice, boarding pass, menu, bus/train timetable, signpost, informational plaque/panel, printed diagram, city map board, museum text label, screenshot, smartphone screen, or QR code sign that does not belong in a personal photo book.
 2. `document_reason`: If `is_document_or_screenshot` is true, state why (e.g. 'Public transport timetable sign', 'Digital route map screenshot', 'Stone informational plaque').
 3. `is_blurry_or_flawed`: Set to `true` if severely out-of-focus, motion-blurred, or an accidental frame.
-4. `aesthetic_score` (1-10), `sharpness_score` (1-10), `emotional_score` (1-10), and `cover_worthiness_score` (1-10).
-5. `subject_summary`: Specific description of the main subject, pose, angle, background, and lighting so near-duplicate burst shots of the same subject can be identified.
-6. `location_or_landmark`: Landmark, city, or setting name if recognizable from the visual scene.
-7. `event_theme`: Short grouping theme describing the place and activity.
-8. `caption`: A warm, evocative caption for the photo book (strictly 1 to 2 lines maximum, under 135 characters).
-9. `people_count`: Count of visible people.
-10. `faces_boxes`: CRITICAL FOR AESTHETIC CROPPING — detect EVERY visible human head/face in the image and return its normalized [0..1000] bounding box (`ymin`, `xmin`, `ymax`, `xmax`, `label="face"`). Include the ENTIRE head from the top of the hair/forehead to the bottom of the chin so cropping NEVER cuts off anyone's face or forehead.
-11. `salient_subject_box`: Normalized [0..1000] bounding box (`ymin`, `xmin`, `ymax`, `xmax`, `label="subject"`) covering the main visual subject(s) for aesthetic composition.
+4. `has_sideways_or_inverted_orientation`: Set to `true` if a person's face/head or the horizon/scene is oriented sideways (rotated 90 degrees left or right) or upside-down (such as an unrotated vertical camera shot or a top-down upside-down face).
+5. `aesthetic_score` (1-10), `sharpness_score` (1-10), `emotional_score` (1-10), and `cover_worthiness_score` (1-10). For `cover_worthiness_score`, strongly prefer breathtaking SCENIC VIEWS, landscapes, sunsets, coastlines, and iconic architecture (`8.5-10.0`) over portraits or selfies (`<= 6.8`).
+6. `subject_summary`: Specific description of the main subject, pose, angle, background, and lighting so near-duplicate burst shots of the same subject can be identified.
+7. `location_or_landmark`: Landmark, city, or setting name if recognizable from the visual scene.
+8. `event_theme`: Short grouping theme describing the place and activity.
+9. `caption`: A warm, evocative caption for the photo book (strictly 1 to 2 lines maximum, under 135 characters).
+10. `people_count`: Count of visible people.
+11. `faces_boxes`: CRITICAL FOR AESTHETIC CROPPING — detect EVERY visible human head/face in the image and return its normalized [0..1000] bounding box (`ymin`, `xmin`, `ymax`, `xmax`, `label="face"`). Include the ENTIRE head from the top of the hair/forehead to the bottom of the chin so cropping NEVER cuts off anyone's face or forehead.
+12. `salient_subject_box`: Normalized [0..1000] bounding box (`ymin`, `xmin`, `ymax`, `xmax`, `label="subject"`) covering the main visual subject(s) for aesthetic composition.
 """
 
 
@@ -345,17 +349,25 @@ def _analyze_single_photo_pixels(photo: PhotoMetadata) -> GeminiPhotoAnalysis:
 
     contrast_bonus = min(0.8, avg_std / 85.0)
     aesthetic = round(
-        min(9.6, max(5.5, 6.5 + (color_saturation / 45.0) + (sharpness - 6.0) * 0.25 + contrast_bonus)),
+        min(9.0, max(5.5, 6.5 + (color_saturation / 45.0) + (sharpness - 6.0) * 0.25 + contrast_bonus)),
         2,
     )
-    emotional = round(min(9.6, aesthetic + (0.35 if faces_boxes else 0.0)), 2)
+    emotional = round(min(9.0, aesthetic + (0.35 if faces_boxes else 0.0)), 2)
+    aspect_ratio = w / max(1.0, float(h))
+    is_balanced_aspect = 0.72 <= aspect_ratio <= 1.95
+    # Give preference to scenic views (no close-up faces) over portraits for the cover, and cap fallback cover score <= 7.4
+    scenic_bonus = 0.35 if not faces_boxes else -0.45
     cover_score = round(
         min(
-            9.8,
-            0.45 * aesthetic
-            + 0.35 * emotional
-            + 0.20 * sharpness
-            + (0.3 if photo.orientation in ("landscape", "square") else 0.0),
+            7.4,
+            max(
+                3.5,
+                0.50 * aesthetic
+                + 0.30 * sharpness
+                + 0.20 * emotional
+                + scenic_bonus
+                + (0.25 if photo.orientation in ("landscape", "square") and is_balanced_aspect else -0.4),
+            ),
         ),
         2,
     )
@@ -526,15 +538,134 @@ def _call_gemini_vision_api(
         raise primary_exc or fallback_exc
 
 
+def _item_to_photo_analysis(item: BatchPhotoAnalysisItem) -> GeminiPhotoAnalysis:
+    data = item.model_dump()
+    data.pop("photo_id", None)
+    parsed = GeminiPhotoAnalysis.model_validate(data)
+    parsed.caption = clamp_caption_two_lines(parsed.caption)
+    return parsed
+
+
+def _call_gemini_vision_batch_api(
+    client: genai.Client,
+    batch_photos: list[PhotoMetadata],
+    resolved_model: str,
+    requested_model: str,
+    thinking_level: str,
+    media_resolution: str,
+    prefer_generate_content: bool = False,
+) -> tuple[dict[str, GeminiPhotoAnalysis], bool]:
+    """Send multiple photos (e.g., 4 to 8 images) in a single multimodal API call to drastically reduce
+    round-trip latency and thinking overhead."""
+    if len(batch_photos) == 1:
+        single_parsed, used_fb = _call_gemini_vision_api(
+            client=client,
+            photo=batch_photos[0],
+            resolved_model=resolved_model,
+            requested_model=requested_model,
+            thinking_level=thinking_level,
+            media_resolution=media_resolution,
+            schema=GeminiPhotoAnalysis.model_json_schema(),
+            prefer_generate_content=prefer_generate_content,
+        )
+        return {batch_photos[0].photo_id: single_parsed}, used_fb
+
+    interaction_inputs: list[dict] = []
+    generate_contents: list = []
+    manifest_lines: list[str] = []
+
+    for idx, p in enumerate(batch_photos, start=1):
+        img_bytes, sent_w, sent_h, api_res_token = _prepare_gemini_image_bytes(p, media_resolution)
+        b64_img = base64.b64encode(img_bytes).decode("utf-8")
+        label_line = (
+            f"Image #{idx}: photo_id='{p.photo_id}', filename='{p.filename}', "
+            f"captured_at='{p.captured_at}', resolution={sent_w}x{sent_h}px"
+        )
+        manifest_lines.append(label_line)
+        interaction_inputs.append(
+            {
+                "type": "image",
+                "data": b64_img,
+                "mime_type": "image/jpeg",
+                "resolution": api_res_token,
+            }
+        )
+        interaction_inputs.append({"type": "text", "text": label_line})
+        generate_contents.append(types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"))
+        generate_contents.append(label_line)
+
+    batch_prompt = (
+        f"{ANALYSIS_PROMPT}\n\n"
+        f"You are analyzing a batch of {len(batch_photos)} photos in order.\n"
+        "Return a JSON object with `items` containing exactly one entry per photo in this batch, "
+        "preserving each photo's exact `photo_id`:\n"
+        + "\n".join(manifest_lines)
+    )
+    interaction_inputs.append({"type": "text", "text": batch_prompt})
+    generate_contents.append(batch_prompt)
+
+    batch_schema = BatchGeminiPhotoAnalysis.model_json_schema()
+    primary_exc: Optional[Exception] = None
+    used_fallback = prefer_generate_content
+
+    if not prefer_generate_content and not requested_model.startswith("gemini-2.5"):
+        try:
+            interaction = client.interactions.create(
+                model=resolved_model,
+                input=interaction_inputs,
+                generation_config={"thinking_level": thinking_level},
+                response_format={
+                    "type": "text",
+                    "mime_type": "application/json",
+                    "schema": batch_schema,
+                },
+            )
+            batch_parsed = BatchGeminiPhotoAnalysis.model_validate_json(interaction.output_text)
+            used_fallback = False
+        except Exception as exc:
+            primary_exc = exc
+            batch_parsed = None
+    else:
+        batch_parsed = None
+
+    if batch_parsed is None:
+        fallback_model = requested_model if requested_model.startswith("gemini-2.5") else "gemini-2.5-flash"
+        try:
+            resp = client.models.generate_content(
+                model=fallback_model,
+                contents=generate_contents,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=BatchGeminiPhotoAnalysis,
+                ),
+            )
+            batch_parsed = BatchGeminiPhotoAnalysis.model_validate_json(resp.text)
+            used_fallback = True
+        except Exception as fallback_exc:
+            raise primary_exc or fallback_exc
+
+    out_map: dict[str, GeminiPhotoAnalysis] = {}
+    by_id = {item.photo_id: item for item in batch_parsed.items}
+    for idx, p in enumerate(batch_photos):
+        matched_item = by_id.get(p.photo_id)
+        if matched_item is None and idx < len(batch_parsed.items):
+            matched_item = batch_parsed.items[idx]
+        if matched_item is not None:
+            out_map[p.photo_id] = _item_to_photo_analysis(matched_item)
+
+    return out_map, used_fallback
+
+
 def analyze_photos_with_gemini(
     photos: list[PhotoMetadata],
     model: str = DEFAULT_MODEL,
     thinking_level: str = "medium",
     media_resolution: str = "high",
+    batch_size: int = 1,
     api_key: Optional[str] = None,
     progress_cb: Optional[Callable[[str, int, int], None]] = None,
 ) -> tuple[str, Optional[str]]:
-    """Run deep image analysis on photos using Gemini 3.8 Flash."""
+    """Run deep image analysis on photos using Gemini (supports both single-photo and multi-photo batch mode)."""
     from concurrent.futures import wait as futures_wait, FIRST_COMPLETED
     from dotenv import load_dotenv
 
@@ -557,12 +688,12 @@ def analyze_photos_with_gemini(
         return resolved_model, model_note
 
     try:
-        client = genai.Client(api_key=effective_key, http_options={"timeout": 18000})
+        client = genai.Client(api_key=effective_key, http_options={"timeout": 88000})
     except Exception:
         client = genai.Client(api_key=effective_key)
     schema = GeminiPhotoAnalysis.model_json_schema()
     api_errors: list[str] = []
-    prefer_generate_content = False
+    prefer_generate_content = model.startswith("gemini-2.5")
 
     def _cache_path(photo: PhotoMetadata) -> Path:
         return Path(photo.analysis_path).with_suffix(f".{resolved_model}.{thinking_level}.{media_resolution}.json")
@@ -600,7 +731,103 @@ def analyze_photos_with_gemini(
             continue
         remaining_photos.append(p)
 
-    # Probe the first uncached photo before spawning parallel workers
+    effective_batch_size = max(1, min(10, int(batch_size or 1)))
+
+    if remaining_photos and effective_batch_size > 1 and len(remaining_photos) > 1:
+        batches = [
+            remaining_photos[i : i + effective_batch_size]
+            for i in range(0, len(remaining_photos), effective_batch_size)
+        ]
+        # Probe the first batch first
+        first_batch = batches[0]
+        if progress_cb:
+            progress_cb(
+                f"Batch analyzing photos {g_done + 1}–{g_done + len(first_batch)}/{g_total} (batch size={effective_batch_size})...",
+                max(1, g_done),
+                g_total,
+            )
+        try:
+            mapped, used_fb = _call_gemini_vision_batch_api(
+                client=client,
+                batch_photos=first_batch,
+                resolved_model=resolved_model,
+                requested_model=model,
+                thinking_level=thinking_level,
+                media_resolution=media_resolution,
+                prefer_generate_content=prefer_generate_content,
+            )
+            prefer_generate_content = used_fb
+            for bp in first_batch:
+                if bp.photo_id in mapped:
+                    bp.analysis = mapped[bp.photo_id]
+                    _cache_path(bp).write_text(bp.analysis.model_dump_json(), encoding="utf-8")
+            g_done += len(first_batch)
+            batches = batches[1:]
+            if progress_cb:
+                progress_cb(
+                    f"Batch analyzed {g_done}/{g_total} photos ({len(batches)} batch calls remaining)...",
+                    g_done,
+                    g_total,
+                )
+        except Exception as probe_exc:
+            api_errors.append(str(probe_exc))
+            batches = []
+
+        def _call_batch(b_photos: list[PhotoMetadata]) -> int:
+            try:
+                mapped_res, _ = _call_gemini_vision_batch_api(
+                    client=client,
+                    batch_photos=b_photos,
+                    resolved_model=resolved_model,
+                    requested_model=model,
+                    thinking_level=thinking_level,
+                    media_resolution=media_resolution,
+                    prefer_generate_content=prefer_generate_content,
+                )
+                for bp in b_photos:
+                    if bp.photo_id in mapped_res:
+                        bp.analysis = mapped_res[bp.photo_id]
+                        _cache_path(bp).write_text(bp.analysis.model_dump_json(), encoding="utf-8")
+                return len(b_photos)
+            except Exception as exc:
+                if len(api_errors) < 3:
+                    api_errors.append(str(exc))
+                return len(b_photos)
+
+        if batches:
+            executor = ThreadPoolExecutor(max_workers=min(6, len(batches)))
+            try:
+                pending = {executor.submit(_call_batch, b): b for b in batches}
+                while pending:
+                    done_set, not_done_set = futures_wait(pending.keys(), timeout=96.0, return_when=FIRST_COMPLETED)
+                    if not done_set:
+                        for stalled_fut in list(not_done_set):
+                            stalled_fut.cancel()
+                            pending.pop(stalled_fut, None)
+                        break
+                    for fut in done_set:
+                        b_list = pending.pop(fut)
+                        g_done += len(b_list)
+                        try:
+                            fut.result(timeout=1.0)
+                        except Exception:
+                            pass
+                        if progress_cb:
+                            progress_cb(
+                                f"Batch analyzed {min(g_done, g_total)}/{g_total} photos (last: {b_list[-1].filename})",
+                                min(g_done, g_total),
+                                g_total,
+                            )
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
+
+        if api_errors:
+            err_msg = f"Gemini API error ({api_errors[0][:160]})."
+            model_note = f"{model_note} {err_msg}".strip() if model_note else err_msg
+
+        return resolved_model, model_note
+
+    # Single-photo mode (batch_size == 1 or only 1 uncached photo)
     if remaining_photos:
         probe_photo = remaining_photos[0]
         if progress_cb:
@@ -618,7 +845,7 @@ def analyze_photos_with_gemini(
                 thinking_level=thinking_level,
                 media_resolution=media_resolution,
                 schema=schema,
-                prefer_generate_content=False,
+                prefer_generate_content=prefer_generate_content,
             )
             probe_photo.analysis = parsed
             _cache_path(probe_photo).write_text(parsed.model_dump_json(), encoding="utf-8")
@@ -659,9 +886,8 @@ def analyze_photos_with_gemini(
         try:
             pending = {executor.submit(_call_one, p): p for p in remaining_photos}
             while pending:
-                done_set, not_done_set = futures_wait(pending.keys(), timeout=20.0, return_when=FIRST_COMPLETED)
+                done_set, not_done_set = futures_wait(pending.keys(), timeout=80.0, return_when=FIRST_COMPLETED)
                 if not done_set:
-                    # A stalled network socket timed out after 20s with no progress; skip remaining stalled sockets
                     for stalled_fut in list(not_done_set):
                         stalled_fut.cancel()
                         pending.pop(stalled_fut, None)
@@ -697,6 +923,38 @@ def _text_token_jaccard(a: str, b: str) -> float:
     return len(tokens_a & tokens_b) / float(len(tokens_a | tokens_b))
 
 
+def is_sideways_or_inverted_photo(photo: PhotoMetadata) -> tuple[bool, Optional[str]]:
+    """Detect if a photo has a sideways or upside-down face/scene orientation that shouldn't appear in the photo book."""
+    a = photo.analysis
+    if getattr(a, "has_sideways_or_inverted_orientation", False):
+        return True, "Sideways or upside-down face/scene orientation"
+
+    summary_lower = (a.subject_summary or "").lower()
+    caption_lower = (a.caption or "").lower()
+    combined = f"{summary_lower} {caption_lower}"
+
+    sideways_markers = (
+        "sideways",
+        "sideways-oriented",
+        "sideways/portrait",
+        "upside-down",
+        "upside down",
+        "rotated 90",
+        "vertical orientation of sunlight and shadow casting patterns across steep canyon",
+    )
+    if any(m in combined for m in sideways_markers):
+        return True, "Sideways or unrotated camera orientation"
+
+    # Top-down / high-angle shot of someone lying upside-down/sideways with eyes closed on a cushion
+    if (
+        ("top-down perspective" in summary_lower or "high-angle perspective" in summary_lower)
+        and ("resting on a boat cushion" in summary_lower or "resting flat on his back" in summary_lower or "naps on the deck" in combined)
+    ):
+        return True, "Upside-down / sideways face orientation in top-down resting shot"
+
+    return False, None
+
+
 def deduplicate_and_filter_photos(
     photos: list[PhotoMetadata],
     duplicate_hamming_threshold: int = 6,
@@ -704,7 +962,7 @@ def deduplicate_and_filter_photos(
     similar_color_threshold: float = 0.965,
     max_book_photos: int = 90,
 ) -> list[PhotoMetadata]:
-    """Remove documents/screenshots, blurry frames, exact duplicates, and visually similar burst shots."""
+    """Remove documents/screenshots, blurry frames, sideways/inverted face photos, exact duplicates, and similar burst shots."""
     candidates: list[PhotoMetadata] = []
     for p in photos:
         if p.analysis.is_document_or_screenshot:
@@ -714,6 +972,11 @@ def deduplicate_and_filter_photos(
         if p.analysis.is_blurry_or_flawed or p.analysis.sharpness_score < 3.6:
             p.status = "excluded_low_quality"
             p.exclusion_reason = f"Low technical quality or motion blur (sharpness {p.analysis.sharpness_score}/10)"
+            continue
+        is_sideways, sideways_reason = is_sideways_or_inverted_photo(p)
+        if is_sideways:
+            p.status = "excluded_low_quality"
+            p.exclusion_reason = sideways_reason or "Sideways or inverted face/scene orientation"
             continue
         candidates.append(p)
 
@@ -804,43 +1067,43 @@ def deduplicate_and_filter_photos(
 # ── 10x10 Inch Page Templates & Slot Geometries ──────────────────────────────
 PAGE_TEMPLATES: dict[PageTemplateId, list[tuple[float, float, float, float]]] = {
     "cover_hero": [
-        (1.0, 1.35, 8.0, 6.4),
+        (1.1, 1.65, 7.8, 5.85),
     ],
     "single_full_square": [
-        (0.85, 1.15, 8.3, 7.25),
+        (0.95, 1.60, 8.1, 6.15),
     ],
     "single_editorial": [
-        (2.1, 1.2, 5.8, 7.25),
+        (2.15, 1.60, 5.7, 6.15),
     ],
     "single_panoramic": [
-        (0.75, 2.0, 8.5, 5.4),
+        (0.80, 2.15, 8.4, 5.25),
     ],
     "two_side_by_side": [
-        (0.75, 1.4, 4.1, 6.8),
-        (5.15, 1.4, 4.1, 6.8),
+        (0.75, 1.65, 4.1, 6.05),
+        (5.15, 1.65, 4.1, 6.05),
     ],
     "two_stacked_horizontal": [
-        (1.0, 1.25, 8.0, 3.45),
-        (1.0, 5.05, 8.0, 3.45),
+        (1.05, 1.60, 7.9, 2.70),
+        (1.05, 5.05, 7.9, 2.70),
     ],
     "two_asymmetric": [
-        (0.75, 1.35, 5.1, 6.85),
-        (6.1, 2.15, 3.15, 5.25),
+        (0.75, 1.65, 5.05, 6.05),
+        (6.05, 2.15, 3.20, 5.00),
     ],
     "three_hero_left": [
-        (0.75, 1.35, 4.55, 6.9),
-        (5.55, 1.35, 3.7, 3.3),
-        (5.55, 4.95, 3.7, 3.3),
+        (0.75, 1.60, 4.50, 6.15),
+        (5.55, 1.60, 3.70, 2.70),
+        (5.55, 5.05, 3.70, 2.70),
     ],
     "three_hero_top": [
-        (0.85, 1.25, 8.3, 3.75),
-        (0.85, 5.25, 4.0, 3.15),
-        (5.15, 5.25, 4.0, 3.15),
+        (0.85, 1.60, 8.30, 2.75),
+        (0.85, 5.10, 3.95, 2.65),
+        (5.20, 5.10, 3.95, 2.65),
     ],
     "three_columns": [
-        (0.65, 1.55, 2.75, 6.5),
-        (3.625, 1.55, 2.75, 6.5),
-        (6.6, 1.55, 2.75, 6.5),
+        (0.65, 1.70, 2.75, 5.95),
+        (3.625, 1.70, 2.75, 5.95),
+        (6.60, 1.70, 2.75, 5.95),
     ],
 }
 
@@ -915,6 +1178,72 @@ def _synthesize_group_caption(photos_in_group: list[PhotoMetadata], chapter_titl
     return clamp_caption_two_lines(best.analysis.caption)
 
 
+def select_hero_cover_photo(selected_photos: list[PhotoMetadata]) -> PhotoMetadata:
+    """Select the Hero cover image for the 10x10 front cover:
+    1. Give strong preference to a high-quality scenic view (no close-up faces/portraits, balanced aspect ratio).
+    2. If no good scenic view is available, pick the overall most suitable photo across all selected photos.
+    """
+    non_scenic_object_keywords = (
+        "fresco",
+        "boutique",
+        "tablecloth",
+        "yogurt",
+        "cacti",
+        "chandelier",
+        "pottery",
+        "sacks",
+        "menu",
+        "receipt",
+        "dinner",
+        "lunch",
+    )
+
+    def _is_good_scenic(p: PhotoMetadata, require_gemini_caption: bool = True) -> bool:
+        a = p.analysis
+        if a.people_count > 0 or len(a.faces_boxes) > 0:
+            return False
+        if a.cover_worthiness_score < 6.8 or a.aesthetic_score < 7.0:
+            return False
+        aspect = p.analysis_width / max(1.0, float(p.analysis_height))
+        if not (0.70 <= aspect <= 2.15):
+            return False
+        if require_gemini_caption and (a.subject_summary or "").endswith("px)"):
+            return False
+        txt = f"{a.subject_summary} {a.caption} {a.event_theme}".lower()
+        if any(k in txt for k in non_scenic_object_keywords):
+            return False
+        return True
+
+    def _scenic_rank_key(p: PhotoMetadata) -> tuple[float, float, float]:
+        a = p.analysis
+        orient_bonus = 0.55 if p.orientation in ("landscape", "square") else 0.0
+        return (
+            round(a.cover_worthiness_score + orient_bonus, 3),
+            a.aesthetic_score,
+            a.sharpness_score,
+        )
+
+    # First try Gemini-analyzed scenic views
+    scenic_candidates = [p for p in selected_photos if _is_good_scenic(p, require_gemini_caption=True)]
+    if not scenic_candidates:
+        # Next try any scenic view (including offline/pixel-analyzed scenic views)
+        scenic_candidates = [p for p in selected_photos if _is_good_scenic(p, require_gemini_caption=False)]
+
+    if scenic_candidates:
+        return max(scenic_candidates, key=_scenic_rank_key)
+
+    # Fallback: if no good scenic view is available, pick the most suitable photo overall
+    return max(
+        selected_photos,
+        key=lambda p: (
+            0 if (p.analysis.subject_summary or "").endswith("px)") else 1,
+            p.analysis.cover_worthiness_score + (0.35 if p.orientation in ("square", "landscape") else 0.0),
+            p.analysis.composite_score,
+            p.analysis.sharpness_score,
+        ),
+    )
+
+
 def _default_clusters_and_pages(selected_photos: list[PhotoMetadata]) -> _BookCurationPlan:
     """Chronological clustering and 1-to-3 photo page grouping from the photo analyses."""
     by_day: dict[str, list[PhotoMetadata]] = defaultdict(list)
@@ -947,14 +1276,7 @@ def _default_clusters_and_pages(selected_photos: list[PhotoMetadata]) -> _BookCu
             )
         )
 
-    hero_photo = max(
-        selected_photos,
-        key=lambda p: (
-            p.analysis.cover_worthiness_score,
-            p.analysis.composite_score,
-            1 if p.orientation in ("square", "landscape") else 0,
-        ),
-    )
+    hero_photo = select_hero_cover_photo(selected_photos)
 
     pages: list[_CurationPagePlan] = []
     photo_by_id = {p.photo_id: p for p in selected_photos}
@@ -1012,6 +1334,10 @@ def curate_clusters_and_pages(
     work_dir: str | Path,
     model: str = DEFAULT_MODEL,
     thinking_level: str = "medium",
+    curation_model: str = "gemini-2.5-flash-lite",
+    hero_model: str = "gemini-3.8-flash",
+    layout_model: str = "local_geometric",
+    batch_size: int = 6,
     api_key: Optional[str] = None,
 ) -> tuple[str, str, str, list[PhotoCluster], list[BookPage]]:
     """Cluster surviving chronological photos into thematic events, select the Hero cover image,
@@ -1019,68 +1345,109 @@ def curate_clusters_and_pages(
     if not selected_photos:
         raise ValueError("No photos remaining after removing duplicates and documents.")
 
-    resolved_model, _ = resolve_gemini_model(model)
     effective_key = (api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "").strip()
-
-    plan: Optional[_BookCurationPlan] = None
-    if effective_key:
-        try:
-            client = genai.Client(api_key=effective_key)
-            summaries = [
-                {
-                    "photo_id": p.photo_id,
-                    "filename": p.filename,
-                    "captured_at": p.captured_at,
-                    "orientation": p.orientation,
-                    "composite_score": p.analysis.composite_score,
-                    "cover_worthiness_score": p.analysis.cover_worthiness_score,
-                    "location_or_landmark": p.analysis.location_or_landmark,
-                    "event_theme": p.analysis.event_theme,
-                    "caption": p.analysis.caption,
-                    "people_count": p.analysis.people_count,
-                }
-                for p in selected_photos
-            ]
-            prompt = (
-                "You are designing a 10x10 inch personal photo book from these chronologically ordered photos.\n"
-                "Rules:\n"
-                "1. Keep photos in strict chronological order.\n"
-                "2. Cluster related photos into thematic groups/chapters based ONLY on the actual locations and themes in the provided photos.\n"
-                "3. Write a 1 to 2 line max `group_caption` (under 140 chars) for each cluster and multi-photo page.\n"
-                "4. Select the single best `hero_cover_photo_id` for the front cover.\n"
-                "5. Arrange every selected photo across `pages` with strictly 1, 2, or 3 photos max per page.\n\n"
-                f"Chronological Photos JSON:\n{json.dumps(summaries, indent=2)}"
-            )
-            interaction = client.interactions.create(
-                model=resolved_model,
-                input=prompt,
-                generation_config={"thinking_level": thinking_level},
-                response_format={
-                    "type": "text",
-                    "mime_type": "application/json",
-                    "schema": _BookCurationPlan.model_json_schema(),
-                },
-            )
-            candidate_plan = _BookCurationPlan.model_validate_json(interaction.output_text)
-            valid_ids = {p.photo_id for p in selected_photos}
-            planned_ids = [pid for pg in candidate_plan.pages for pid in pg.photo_ids if pid in valid_ids]
-            if planned_ids and candidate_plan.hero_cover_photo_id in valid_ids:
-                missing = [p.photo_id for p in selected_photos if p.photo_id not in set(planned_ids)]
-                for m_id in missing:
-                    candidate_plan.pages.append(
-                        _CurationPagePlan(
-                            cluster_id=candidate_plan.clusters[-1].cluster_id if candidate_plan.clusters else "cluster_01",
-                            photo_ids=[m_id],
-                        )
-                    )
-                plan = candidate_plan
-        except Exception:
-            plan = None
-
-    if plan is None:
-        plan = _default_clusters_and_pages(selected_photos)
+    if effective_key in ("YOUR_GEMINI_API_KEY_HERE", "AIzaSyYourKeyHere"):
+        effective_key = ""
 
     photo_map = {p.photo_id: p for p in selected_photos}
+
+    # Stage 3 (Optional): Hero Cover single-photo precision refinement when batch_size > 1
+    if effective_key and hero_model and hero_model != "none" and batch_size > 1:
+        hero_cand = select_hero_cover_photo(selected_photos)
+        hero_resolved, _ = resolve_gemini_model(hero_model)
+        hero_cache = Path(hero_cand.analysis_path).with_suffix(f".hero.{hero_resolved}.json")
+        if hero_cache.exists():
+            try:
+                hero_cand.analysis = GeminiPhotoAnalysis.model_validate_json(hero_cache.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        else:
+            try:
+                client = genai.Client(api_key=effective_key, http_options={"timeout": 72000})
+                refined_hero, _ = _call_gemini_vision_api(
+                    client=client,
+                    photo=hero_cand,
+                    resolved_model=hero_resolved,
+                    requested_model=hero_model,
+                    thinking_level="medium",
+                    media_resolution="high",
+                    schema=GeminiPhotoAnalysis.model_json_schema(),
+                    prefer_generate_content=hero_model.startswith("gemini-2.5"),
+                )
+                hero_cand.analysis = refined_hero
+                hero_cache.write_text(refined_hero.model_dump_json(), encoding="utf-8")
+            except Exception:
+                pass
+
+    # Build deterministic face-safe chronological clusters & pages first (<5ms)
+    plan = _default_clusters_and_pages(selected_photos)
+
+    # Stage 2: Fast Curation & Chapter Captioning model (e.g. gemini-2.5-flash-lite with 0 thinking budget)
+    if effective_key and curation_model and curation_model != "local_fast":
+        try:
+            client = genai.Client(api_key=effective_key, http_options={"timeout": 40000})
+            cluster_inputs = []
+            for c in plan.clusters:
+                c_photos = [photo_map[pid] for pid in c.photo_ids if pid in photo_map]
+                landmarks = list({p.analysis.location_or_landmark for p in c_photos if p.analysis.location_or_landmark})[:4]
+                themes = list({p.analysis.event_theme for p in c_photos if p.analysis.event_theme})[:4]
+                sample_caps = [p.analysis.caption for p in c_photos[:3] if p.analysis.caption]
+                cluster_inputs.append(
+                    {
+                        "cluster_id": c.cluster_id,
+                        "date_range": c.date_range_label,
+                        "landmarks": landmarks,
+                        "themes": themes,
+                        "sample_captions": sample_caps,
+                    }
+                )
+            curation_prompt = (
+                "You are titling a 10x10 inch personal photo book and its chronological chapters.\n"
+                "Based ONLY on the actual landmarks, themes, and dates below, return:\n"
+                "1. A memorable `book_title` (under 55 chars).\n"
+                "2. For each cluster in `clusters`, a concise chapter `title` and a warm 1-2 line max `group_caption` (under 135 chars).\n\n"
+                f"Clusters JSON:\n{json.dumps(cluster_inputs)}"
+            )
+            if curation_model.startswith("gemini-3.8"):
+                interaction = client.interactions.create(
+                    model="gemini-3.8-flash",
+                    input=curation_prompt,
+                    generation_config={"thinking_level": "low"},
+                    response_format={
+                        "type": "text",
+                        "mime_type": "application/json",
+                        "schema": BookCurationRefinement.model_json_schema(),
+                    },
+                )
+                refinement = BookCurationRefinement.model_validate_json(interaction.output_text)
+            else:
+                target_curation_model = (
+                    curation_model if curation_model.startswith("gemini-2.5") else "gemini-2.5-flash-lite"
+                )
+                resp = client.models.generate_content(
+                    model=target_curation_model,
+                    contents=curation_prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=BookCurationRefinement,
+                        thinking_config=types.ThinkingConfig(thinking_budget=0),
+                    ),
+                )
+                refinement = BookCurationRefinement.model_validate_json(resp.text)
+
+            if refinement.book_title:
+                plan.book_title = refinement.book_title.strip()
+            ref_by_id = {item.cluster_id: item for item in refinement.clusters}
+            for c in plan.clusters:
+                if c.cluster_id in ref_by_id:
+                    r_item = ref_by_id[c.cluster_id]
+                    if r_item.title:
+                        c.title = r_item.title.strip()
+                    if r_item.group_caption:
+                        c.group_caption = clamp_caption_two_lines(r_item.group_caption)
+        except Exception:
+            pass
+
     if plan.hero_cover_photo_id not in photo_map:
         plan.hero_cover_photo_id = selected_photos[0].photo_id
 

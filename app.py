@@ -38,8 +38,26 @@ _BOOKS: dict[str, PhotoBookResult] = {}
 
 class BuildRequest(BaseModel):
     folder_path: str = Field(description="Path to the local folder containing personal photos")
-    model: str = Field(default=DEFAULT_MODEL, description="Gemini model ID (gemini-3.8-flash)")
+    model: str = Field(default=DEFAULT_MODEL, description="Stage 1: Photo Vision Analysis model ID")
     thinking_level: str = Field(default="medium", description="Thinking effort: low, medium, or high")
+    curation_model: str = Field(
+        default="gemini-2.5-flash-lite",
+        description="Stage 2: Fast model for chapter clustering, book title & group captions",
+    )
+    hero_model: str = Field(
+        default="gemini-3.8-flash",
+        description="Stage 3: Model for Hero Cover single-photo precision refinement ('none' to skip)",
+    )
+    layout_model: str = Field(
+        default="local_geometric",
+        description="Stage 4: Page layout engine ('local_geometric' or a Gemini model ID)",
+    )
+    batch_size: int = Field(
+        default=6,
+        ge=1,
+        le=10,
+        description="Number of photos sent per single vision API call (1 = single-photo mode, 4-8 = fast batch mode)",
+    )
     media_resolution: str = Field(
         default="high",
         description="Photo analysis resolution preset: 'low_384', 'low', 'medium', 'high', or 'ultra_high'",
@@ -107,6 +125,10 @@ def build_book_endpoint(req: BuildRequest) -> PhotoBookResult:
             output_root=OUTPUT_ROOT,
             model=req.model,
             thinking_level=req.thinking_level,
+            curation_model=req.curation_model,
+            hero_model=req.hero_model,
+            layout_model=req.layout_model,
+            batch_size=req.batch_size,
             media_resolution=req.media_resolution,
             min_analysis_px=req.min_analysis_px,
             max_analysis_px=req.max_analysis_px,
@@ -139,6 +161,9 @@ def build_book_stream_endpoint(req: BuildRequest) -> StreamingResponse:
                 output_root=OUTPUT_ROOT,
                 model=req.model,
                 thinking_level=req.thinking_level,
+                curation_model=req.curation_model,
+                hero_model=req.hero_model,
+                batch_size=req.batch_size,
                 media_resolution=req.media_resolution,
                 min_analysis_px=req.min_analysis_px,
                 max_analysis_px=req.max_analysis_px,
@@ -200,4 +225,11 @@ def serve_book_file(book_id: str, file_path: str) -> FileResponse:
     target = (book_dir / file_path).resolve()
     if not str(target).startswith(str(book_dir)) or not target.exists() or not target.is_file():
         raise HTTPException(status_code=404, detail="Requested file not found")
-    return FileResponse(target)
+    return FileResponse(
+        target,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )

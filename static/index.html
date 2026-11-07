@@ -213,14 +213,40 @@
     font-weight: 600;
   }
   .square-page-stage {
+    position: relative;
     display: flex;
     justify-content: center;
     align-items: center;
-    padding: 22px 18px;
-    background: radial-gradient(circle at center, #161a24 0%, #0b0d12 100%);
+    padding: 28px 22px;
+    background: radial-gradient(circle at center, #181d2a 0%, #090b10 100%);
     border-radius: 12px;
     border: 1px solid var(--border);
-    overflow-x: auto;
+    overflow: hidden;
+  }
+  .square-page-stage.stage-3d {
+    perspective: 2200px;
+    padding: 46px 32px 56px;
+    background: radial-gradient(ellipse at 50% 35%, #22283a 0%, #0d1018 65%, #07080c 100%);
+  }
+  .autoplay-progress-track {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+    z-index: 30;
+    display: none;
+  }
+  .autoplay-active .autoplay-progress-track {
+    display: block;
+  }
+  .autoplay-progress-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--gold), #f3dc99);
+    transition: width 0.1s linear;
   }
   .open-book-spread {
     position: relative;
@@ -233,35 +259,183 @@
     border-radius: 6px;
     border: 1px solid #3c352c;
     box-shadow: 0 28px 65px rgba(0, 0, 0, 0.78), 0 4px 14px rgba(0, 0, 0, 0.5);
+    transition: transform 0.25s ease-out, box-shadow 0.25s ease-out;
   }
+  .stage-3d .open-book-spread {
+    transform-style: preserve-3d;
+    transform: rotateX(11deg) rotateY(0deg) translateZ(0);
+    box-shadow:
+      0 42px 80px rgba(0, 0, 0, 0.88),
+      0 14px 0 -2px #ded6c6,
+      0 18px 0 -3px #c9bfa9,
+      0 23px 0 -4px #181512,
+      0 28px 30px rgba(0, 0, 0, 0.75);
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: linear-gradient(180deg, #2b241d 0%, #17130f 100%);
+    border: 1px solid #524536;
+  }
+  /* Realistic paper block edges on left and right in 3D mode */
+  .stage-3d .open-book-spread::before,
+  .stage-3d .open-book-spread::after {
+    content: "";
+    position: absolute;
+    top: 12px;
+    bottom: 10px;
+    width: 10px;
+    pointer-events: none;
+    z-index: 4;
+  }
+  .stage-3d .open-book-spread::before {
+    left: 2px;
+    background: repeating-linear-gradient(
+      90deg,
+      #efe9dc 0px,
+      #efe9dc 1px,
+      #cfc5b2 1px,
+      #cfc5b2 2px
+    );
+    border-radius: 2px 0 0 2px;
+  }
+  .stage-3d .open-book-spread::after {
+    right: 2px;
+    background: repeating-linear-gradient(
+      90deg,
+      #cfc5b2 0px,
+      #cfc5b2 1px,
+      #efe9dc 1px,
+      #efe9dc 2px
+    );
+    border-radius: 0 2px 2px 0;
+  }
+  /* 3D Rigid Lay-Flat Page Turning Board */
+  .turning-leaf-3d {
+    position: absolute;
+    top: 10px;
+    bottom: 10px;
+    width: calc(50% - 12px);
+    transform-style: preserve-3d;
+    z-index: 25;
+    pointer-events: none;
+  }
+  .turning-leaf-3d.turn-next {
+    right: 12px;
+    transform-origin: left center;
+    animation: flipNext3D 0.78s cubic-bezier(0.645, 0.045, 0.355, 1.000) forwards;
+  }
+  .turning-leaf-3d.turn-prev {
+    left: 12px;
+    transform-origin: right center;
+    animation: flipPrev3D 0.78s cubic-bezier(0.645, 0.045, 0.355, 1.000) forwards;
+  }
+  .turning-face {
+    position: absolute;
+    inset: 0;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    overflow: hidden;
+    border-left: 1px solid #dfd7c6;
+    border-right: 1px solid #dfd7c6;
+  }
+  .turning-face.face-back {
+    transform: rotateY(180deg);
+  }
+  .turning-leaf-3d .square-page {
+    width: 100%;
+    height: 100%;
+  }
+  /* Planar specular lighting for flat rigid board (no spine curvature shadow) */
+  .turning-shade {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.10) 50%, rgba(0,0,0,0.05) 100%);
+    pointer-events: none;
+    z-index: 20;
+  }
+  @keyframes flipNext3D {
+    0% {
+      transform: rotateY(0deg);
+      box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+    }
+    50% {
+      transform: rotateY(-90deg);
+      box-shadow: -22px 14px 36px rgba(0, 0, 0, 0.45);
+    }
+    100% {
+      transform: rotateY(-180deg);
+      box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+    }
+  }
+  @keyframes flipPrev3D {
+    0% {
+      transform: rotateY(0deg);
+      box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+    }
+    50% {
+      transform: rotateY(90deg);
+      box-shadow: 22px 14px 36px rgba(0, 0, 0, 0.45);
+    }
+    100% {
+      transform: rotateY(180deg);
+      box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+    }
+  }
+  .btn-autoplay {
+    background: rgba(197, 164, 109, 0.16);
+    color: var(--gold);
+    border: 1px solid var(--gold);
+    padding: 6px 13px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+  }
+  .btn-autoplay.playing {
+    background: var(--gold);
+    color: #12151c;
+    box-shadow: 0 0 16px rgba(197, 164, 109, 0.45);
+  }
+  .autoplay-speed-select {
+    width: auto !important;
+    margin-bottom: 0 !important;
+    padding: 5px 9px !important;
+    font-size: 12px !important;
+    background: var(--panel-alt);
+  }
+  /* Lay-flat spread: 180-degree flush pages with zero spine gutter shadow */
   .open-book-spread .square-page {
     width: 100%;
     height: 100%;
     box-shadow: none;
   }
-  .open-book-spread .square-page.left-leaf {
-    border-right: 1px solid #d5ccb8;
-    box-shadow: inset -18px 0 26px -12px rgba(0, 0, 0, 0.22);
-  }
+  .open-book-spread .square-page.left-leaf,
   .open-book-spread .square-page.right-leaf {
-    box-shadow: inset 18px 0 26px -12px rgba(0, 0, 0, 0.22);
+    border: none;
+    box-shadow: none;
   }
+  /* Continuous trim border across the 20x10 lay-flat interior spread */
+  .open-book-spread .square-page.interior.left-leaf .page-trim-border {
+    right: 0;
+    border-right: none;
+  }
+  .open-book-spread .square-page.interior.right-leaf .page-trim-border {
+    left: 0;
+    border-left: none;
+  }
+  /* Hairline 1px micro-fold seam for lay-flat flush binding (no dark gutter) */
   .book-spine-crease {
     position: absolute;
     top: 8px;
     bottom: 8px;
     left: 50%;
-    width: 28px;
+    width: 1px;
     transform: translateX(-50%);
-    background: linear-gradient(
-      90deg,
-      rgba(0, 0, 0, 0) 0%,
-      rgba(0, 0, 0, 0.18) 38%,
-      rgba(15, 12, 8, 0.48) 50%,
-      rgba(255, 255, 255, 0.12) 54%,
-      rgba(0, 0, 0, 0.16) 65%,
-      rgba(0, 0, 0, 0) 100%
-    );
+    background: rgba(175, 163, 142, 0.42);
+    box-shadow: 1px 0 0 rgba(255, 255, 255, 0.45);
     pointer-events: none;
     z-index: 15;
   }
@@ -292,36 +466,47 @@
   }
   .page-trim-border {
     position: absolute;
-    inset: 3.8%;
+    inset: 3.2%;
     border: 1px solid rgba(197, 164, 109, 0.55);
     pointer-events: none;
   }
   .page-header-box {
     position: absolute;
-    top: 5.2%;
+    top: 4.8%;
     left: 7.5%;
     right: 7.5%;
+    z-index: 5;
+  }
+  .square-page.cover .page-header-box {
+    top: 5.2%;
   }
   .page-header-box.centered { text-align: center; }
   .page-eyebrow {
-    font-size: 9.5px;
+    font-size: 8.5px;
     font-weight: 700;
     letter-spacing: 0.14em;
+    line-height: 1.1;
     color: #8c6d3f;
   }
-  .square-page.cover .page-eyebrow { color: #c5a46d; }
+  .square-page.cover .page-eyebrow { color: #c5a46d; margin-bottom: 2px; }
   .page-title-h {
     font-family: Georgia, "Times New Roman", serif;
-    font-size: 19px;
+    font-size: 13px;
+    line-height: 1.2;
     margin: 2px 0 0 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
-  .square-page.cover .page-title-h { font-size: 22px; }
+  .square-page.cover .page-title-h { font-size: 15.5px; line-height: 1.2; }
   .slot-box {
     position: absolute;
     background: #fff;
     padding: 4px;
     border: 1px solid #ddd5c7;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    z-index: 2;
   }
   .square-page.cover .slot-box {
     background: #faf7f2;
@@ -350,27 +535,39 @@
     position: absolute;
     left: 2px;
     right: 2px;
-    bottom: -17px;
+    top: calc(100% + 4px);
     font-family: Georgia, "Times New Roman", serif;
     font-style: italic;
-    font-size: 10px;
+    font-size: 9.5px;
+    line-height: 1.18;
     color: #4a4f55;
-    white-space: nowrap;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
+    z-index: 6;
+    pointer-events: none;
   }
   .page-footer-box {
     position: absolute;
-    bottom: 5.0%;
+    bottom: 4.8%;
     left: 8%;
     right: 8%;
     text-align: center;
+    z-index: 5;
+  }
+  .square-page.cover .page-footer-box {
+    bottom: 5.2%;
   }
   .page-caption-text {
     font-family: Georgia, "Times New Roman", serif;
-    font-size: 12px;
-    line-height: 1.35;
+    font-size: 11px;
+    line-height: 1.3;
     margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
   .square-page.cover .page-caption-text {
     font-style: italic;
@@ -431,8 +628,13 @@
       <p>Deep 1,120–2,240px Analysis • Duplicate &amp; Document Removal • Chronological Clustering • Face-Safe Aesthetic Cropping</p>
     </div>
   </div>
-  <div id="modelHeaderTag" style="font-size:12px;color:var(--gold);font-weight:600;">
-    Model: gemini-3.8-flash (Medium Effort)
+  <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+    <div id="timeHeaderBadge" style="background:rgba(197,164,109,0.16);border:1px solid var(--gold);color:var(--gold);padding:5px 12px;border-radius:999px;font-size:12.5px;font-weight:700;">
+      ⏱️ Total Time: —
+    </div>
+    <div id="modelHeaderTag" style="font-size:12px;color:var(--gold);font-weight:600;">
+      Model: gemini-3.8-flash (Medium Effort)
+    </div>
   </div>
 </header>
 
@@ -444,21 +646,68 @@
       <label for="folderInput">Local Folder Path</label>
       <input type="text" id="folderInput" placeholder="/Users/amitpoddar/ClaudeProjects/PyhtonLearning/photo_search/myphotos" />
 
-      <h2>2. Gemini 3.8 Flash Settings</h2>
+      <h2>2. Per-Stage Models &amp; Batch Speed</h2>
       <div class="row-2">
         <div>
-          <label for="modelSelect">Gemini Model</label>
+          <label for="modelSelect">Stage 1: Photo Vision Model</label>
           <select id="modelSelect">
-            <option value="gemini-3.8-flash" selected>gemini-3.8-flash (Recommended)</option>
-            <option value="gemini-2.5-flash">gemini-2.5-flash (Auto-upgrades to 3.8)</option>
+            <option value="gemini-3.8-flash" selected>gemini-3.8-flash (Recommended Vision)</option>
+            <option value="gemini-2.5-flash">gemini-2.5-flash (Fast Vision)</option>
+            <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (Ultra-Fast Vision)</option>
+            <option value="gemini-3.8-pro">gemini-3.8-pro (Deepest Vision)</option>
+            <option value="gemini-2.5-pro">gemini-2.5-pro (Pro Vision)</option>
           </select>
         </div>
         <div>
-          <label for="thinkingSelect">Thinking Effort</label>
+          <label for="thinkingSelect">Stage 1 Thinking Effort</label>
           <select id="thinkingSelect">
-            <option value="medium" selected>Medium (Default)</option>
-            <option value="low">Low</option>
-            <option value="high">High</option>
+            <option value="low" selected>Low (Fastest Reasoning)</option>
+            <option value="medium">Medium (Default)</option>
+            <option value="high">High (Deepest)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row-2">
+        <div>
+          <label for="curationModelSelect">Stage 2: Clustering &amp; Captions</label>
+          <select id="curationModelSelect">
+            <option value="gemini-2.5-flash-lite" selected>gemini-2.5-flash-lite (0ms Thinking • Fastest)</option>
+            <option value="gemini-2.5-flash">gemini-2.5-flash (Balanced Text)</option>
+            <option value="gemini-3.8-flash">gemini-3.8-flash (Low Thinking)</option>
+            <option value="gemini-3.8-pro">gemini-3.8-pro (Pro Editorial Captions)</option>
+            <option value="local_fast">Local Instant Rules (0 API Calls)</option>
+          </select>
+        </div>
+        <div>
+          <label for="heroModelSelect">Stage 3: Hero Cover Refinement</label>
+          <select id="heroModelSelect">
+            <option value="gemini-3.8-flash" selected>gemini-3.8-flash (Precision Cover)</option>
+            <option value="gemini-3.8-pro">gemini-3.8-pro (Pro Cover Framing)</option>
+            <option value="gemini-2.5-flash">gemini-2.5-flash (Fast Cover)</option>
+            <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (Lite Cover)</option>
+            <option value="none">Skip Extra Pass (Fastest)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row-2">
+        <div>
+          <label for="layoutModelSelect">Stage 4: Page Layout Engine</label>
+          <select id="layoutModelSelect">
+            <option value="local_geometric" selected>Instant Geometric Face-Safe (0ms • Default)</option>
+            <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (Fast AI Layout)</option>
+            <option value="gemini-2.5-flash">gemini-2.5-flash (Balanced AI Layout)</option>
+            <option value="gemini-3.8-flash">gemini-3.8-flash (Deep AI Layout)</option>
+          </select>
+        </div>
+        <div>
+          <label for="batchSizeSelect">Vision Batch Processing</label>
+          <select id="batchSizeSelect">
+            <option value="8">⚡ Batch of 8 Photos / Call (Fastest)</option>
+            <option value="6" selected>⚡ Batch of 6 Photos / Call (Default)</option>
+            <option value="4">⚡ Batch of 4 Photos / Call</option>
+            <option value="1">Single Photo Mode (1 / Call)</option>
           </select>
         </div>
       </div>
@@ -533,11 +782,24 @@
               <button type="button" id="prevPageBtn">← Previous Spread</button>
               <span id="pageIndicator" style="font-weight:700;font-size:13.5px;">Spread 0 of 0</span>
               <button type="button" id="nextPageBtn">Next Spread →</button>
+              <button type="button" id="autoplayBtn" class="btn-autoplay" title="Autoplay 3D Page Flip (Spacebar)">
+                ▶ Autoplay
+              </button>
+              <select id="autoplaySpeedSelect" class="autoplay-speed-select" title="Autoplay speed per spread">
+                <option value="2500">2.5s / spread (Fast)</option>
+                <option value="4000" selected>4.0s / spread (Normal)</option>
+                <option value="6000">6.0s / spread (Relaxed)</option>
+                <option value="8500">8.5s / spread (Slow)</option>
+              </select>
             </div>
-            <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+            <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+              <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;color:var(--gold);font-weight:700;">
+                <input type="checkbox" id="view3dToggle" checked />
+                ✨ 3D Lay-Flat Flip Viewer
+              </label>
               <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;color:var(--gold);">
                 <input type="checkbox" id="spreadModeToggle" checked />
-                📖 Side-by-Side Book Spread
+                📖 Lay-Flat Book Spread (180°)
               </label>
               <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;">
                 <input type="checkbox" id="overlayToggle" checked />
@@ -546,7 +808,7 @@
             </div>
           </div>
           <div id="spreadQuickBar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;"></div>
-          <div class="square-page-stage" id="pageStage"></div>
+          <div class="square-page-stage stage-3d" id="pageStage"></div>
         </div>
       </div>
 
@@ -637,7 +899,16 @@
     }
     localStorage.setItem('photobook_folder_path', folder);
     buildBtn.disabled = true;
-    statusBox.innerHTML = '⏳ Starting scan (including .HEIC, .JPG, .PNG)...';
+    const t0Client = performance.now();
+    let latestMsg = 'Starting scan (including .HEIC, .JPG, .PNG)...';
+    let latestPct = 1;
+    const timeHeaderBadge = document.getElementById('timeHeaderBadge');
+    const timerInterval = setInterval(() => {
+      const elapsedSec = ((performance.now() - t0Client) / 1000).toFixed(1);
+      timeHeaderBadge.textContent = `⏱️ Running: ${elapsedSec}s`;
+      statusBox.innerHTML = `⏳ <b>[${latestPct}% • ${elapsedSec}s elapsed]</b> ${escapeHtml(latestMsg)}`;
+    }, 200);
+    statusBox.innerHTML = `⏳ <b>[1% • 0.0s elapsed]</b> ${escapeHtml(latestMsg)}`;
     try {
       const resMode = document.getElementById('resSelect').value;
       const resBoundsMap = {
@@ -652,6 +923,10 @@
         folder_path: folder,
         model: document.getElementById('modelSelect').value,
         thinking_level: document.getElementById('thinkingSelect').value,
+        curation_model: document.getElementById('curationModelSelect').value,
+        hero_model: document.getElementById('heroModelSelect').value,
+        layout_model: document.getElementById('layoutModelSelect').value,
+        batch_size: parseInt(document.getElementById('batchSizeSelect').value, 10),
         media_resolution: resMode,
         min_analysis_px: minPx,
         max_analysis_px: maxPx,
@@ -681,31 +956,49 @@
           if (!line.startsWith('data:')) continue;
           const evt = JSON.parse(line.slice(5).trim());
           if (evt.type === 'progress') {
-            statusBox.innerHTML = `⏳ <b>[${evt.percent}%]</b> ${escapeHtml(evt.message)}`;
+            latestPct = evt.percent;
+            latestMsg = evt.message;
+            const elapsedSec = ((performance.now() - t0Client) / 1000).toFixed(1);
+            statusBox.innerHTML = `⏳ <b>[${evt.percent}% • ${elapsedSec}s elapsed]</b> ${escapeHtml(evt.message)}`;
           } else if (evt.type === 'error') {
             throw new Error(evt.detail || 'Build failed');
           } else if (evt.type === 'complete') {
+            clearInterval(timerInterval);
             currentBook = evt.book;
+            const clientElapsed = Number(((performance.now() - t0Client) / 1000).toFixed(2));
+            if (!currentBook.build_duration_seconds) {
+              currentBook.build_duration_seconds = clientElapsed;
+            }
             currentSpreadIndex = currentBook.pages.length > 1 ? 1 : 0;
             renderBookResults(currentBook);
+            const durStr = `${currentBook.build_duration_seconds}s`;
             const noteHtml = currentBook.model_note ? ` <span style="color:var(--gold)">(${currentBook.model_note})</span>` : '';
-            statusBox.innerHTML = `✅ Scanned <b>${currentBook.total_scanned} photos</b> (.HEIC/.JPG/.PNG) → Built <b>${currentBook.title}</b> (${currentBook.total_selected} curated photos across ${currentBook.pages.length} 10×10" pages) using <code>${currentBook.model_used}</code>.${noteHtml}`;
+            statusBox.innerHTML = `✅ Built in <b>⏱️ ${durStr}</b> — Scanned <b>${currentBook.total_scanned} photos</b> → <b>${currentBook.title}</b> (${currentBook.total_selected} curated photos across ${currentBook.pages.length} 10×10" pages).${noteHtml}`;
           }
         }
       }
     } catch (err) {
       statusBox.innerHTML = `<span style="color:var(--red)">❌ ${err.message}</span>`;
     } finally {
+      clearInterval(timerInterval);
       buildBtn.disabled = false;
     }
   });
 
   function renderBookResults(book) {
     resultsContainer.style.display = 'block';
+    const durVal = book.build_duration_seconds ? `${book.build_duration_seconds}s` : 'Cached';
+    document.getElementById('timeHeaderBadge').textContent = `⏱️ Total Time: ${durVal}`;
     document.getElementById('modelHeaderTag').textContent =
-      `Model: ${book.model_used} (${book.thinking_level} effort • ${book.media_resolution} res)`;
+      `Vision: ${book.model_used} (batch=${book.batch_size || 1}) • Curation: ${book.curation_model_used || 'gemini-2.5-flash-lite'} • Hero: ${book.hero_model_used || 'gemini-3.8-flash'} • Layout: ${book.layout_model_used || 'local_geometric'}`;
+
+    const st = book.stage_timings || {};
+    const stageBreakdown = Object.keys(st).length
+      ? ` (Scan: ${st.scan_s ?? 0}s • Dedup: ${st.dedup_s ?? 0}s • Vision: ${st.vision_s ?? 0}s • Layout/Crop: ${st.curation_layout_s ?? 0}s • Render: ${st.render_s ?? 0}s)`
+      : '';
 
     statsBar.innerHTML = `
+      <div class="stat-pill" style="border-color:var(--gold);" title="${escapeHtml(stageBreakdown)}"><b>⏱️ ${durVal}</b> Total Time${escapeHtml(stageBreakdown)}</div>
       <div class="stat-pill"><b>${book.total_scanned}</b> Scanned</div>
       <div class="stat-pill"><b>${book.total_selected}</b> Selected (Chronological)</div>
       <div class="stat-pill"><b>${book.total_excluded_duplicates}</b> Duplicates Removed</div>
@@ -774,7 +1067,7 @@
       return `
         <div class="square-page endpaper ${leafSideClass}">
           <div class="page-trim-border"></div>
-          <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#9b8e78;margin-bottom:8px;">10×10 INCH HARDCOVER EDITION</div>
+          <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#9b8e78;margin-bottom:8px;">10×10 INCH LAY-FLAT HARDCOVER EDITION</div>
           <div style="font-size:18px;color:#4a4338;font-weight:700;text-align:center;padding:0 12%;">${escapeHtml(currentBook.title)}</div>
           <div style="font-size:12px;color:#827766;margin-top:6px;">${escapeHtml(currentBook.subtitle)}</div>
         </div>
@@ -819,11 +1112,11 @@
     `).join('');
 
     const headerHtml = pg.chapter_title
-      ? `<div class="page-header-box" style="border-bottom:1px solid #d4c7b0;padding-bottom:4px;">
+      ? `<div class="page-header-box" style="border-bottom:1px solid #d4c7b0;padding-bottom:3px;">
            <div class="page-eyebrow">CHAPTER</div>
-           <h3 class="page-title-h" style="font-size:15px;">${escapeHtml(pg.chapter_title)}</h3>
+           <h3 class="page-title-h">${escapeHtml(pg.chapter_title)}</h3>
          </div>`
-      : `<div class="page-header-box"><span style="font-family:Georgia,serif;font-style:italic;font-size:11px;color:#8a8478;">${escapeHtml(currentBook.title)}</span></div>`;
+      : '';
 
     const footerCap = pg.group_caption || (pg.slots[0] ? pg.slots[0].caption : '');
     const pageNumPos = leafSideClass === 'left-leaf' ? 'left: 0; right: auto;' : 'right: 0; left: auto;';
@@ -840,6 +1133,14 @@
     `;
   }
 
+  const view3dToggle = document.getElementById('view3dToggle');
+  const autoplayBtn = document.getElementById('autoplayBtn');
+  const autoplaySpeedSelect = document.getElementById('autoplaySpeedSelect');
+  let isFlipping3D = false;
+  let autoplayIntervalId = null;
+  let autoplayProgressTimer = null;
+  let autoplayStartTime = 0;
+
   function renderCurrentPage() {
     if (!currentBook || !currentBook.pages.length) return;
     const spreads = buildBookSpreads(currentBook);
@@ -852,6 +1153,9 @@
     document.getElementById('prevPageBtn').textContent = spreadModeToggle.checked ? '← Previous Spread' : '← Previous Page';
     document.getElementById('nextPageBtn').textContent = spreadModeToggle.checked ? 'Next Spread →' : 'Next Page →';
 
+    pageStage.classList.toggle('stage-3d', view3dToggle.checked);
+    pageStage.classList.toggle('autoplay-active', Boolean(autoplayIntervalId));
+
     spreadQuickBar.innerHTML = spreads.map((item, idx) => {
       const isAct = idx === currentSpreadIndex;
       const bg = isAct ? 'background:var(--gold);color:#12151c;border-color:var(--gold);' : 'background:var(--panel-alt);color:var(--muted);border-color:var(--border);';
@@ -860,16 +1164,18 @@
 
     const baseUrl = `/api/books/${encodeURIComponent(currentBook.book_id)}/files`;
     const overlayClass = overlayToggle.checked ? 'show-overlays' : '';
+    const progressHtml = `<div class="autoplay-progress-track"><div class="autoplay-progress-bar" id="autoplayProgressBar"></div></div>`;
 
     if (sp.isSingle) {
-      pageStage.innerHTML = renderSinglePageLeaf(sp.left, '', baseUrl, overlayClass);
+      pageStage.innerHTML = progressHtml + renderSinglePageLeaf(sp.left, '', baseUrl, overlayClass);
       return;
     }
 
     const leftHtml = renderSinglePageLeaf(sp.left, 'left-leaf', baseUrl, overlayClass);
     const rightHtml = renderSinglePageLeaf(sp.right, 'right-leaf', baseUrl, overlayClass);
     pageStage.innerHTML = `
-      <div class="open-book-spread">
+      ${progressHtml}
+      <div class="open-book-spread" id="openBookSpreadEl">
         ${leftHtml}
         ${rightHtml}
         <div class="book-spine-crease"></div>
@@ -877,23 +1183,173 @@
     `;
   }
 
+  function transitionToSpread(targetIdx, direction) {
+    if (!currentBook || !currentBook.pages.length) return;
+    const spreads = buildBookSpreads(currentBook);
+    const nextIdx = (targetIdx + spreads.length) % spreads.length;
+    if (nextIdx === currentSpreadIndex) return;
+
+    const use3D = view3dToggle.checked && spreadModeToggle.checked && !isFlipping3D;
+    const spreadEl = document.getElementById('openBookSpreadEl');
+    if (!use3D || !spreadEl) {
+      currentSpreadIndex = nextIdx;
+      renderCurrentPage();
+      return;
+    }
+
+    isFlipping3D = true;
+    const curSp = spreads[currentSpreadIndex];
+    const nextSp = spreads[nextIdx];
+    const baseUrl = `/api/books/${encodeURIComponent(currentBook.book_id)}/files`;
+    const overlayClass = overlayToggle.checked ? 'show-overlays' : '';
+
+    if (direction === 'next') {
+      // Underlying book immediately shows current left + next right; turning leaf has current right on front & next left on back
+      const underLeft = renderSinglePageLeaf(curSp.left, 'left-leaf', baseUrl, overlayClass);
+      const underRight = renderSinglePageLeaf(nextSp.right, 'right-leaf', baseUrl, overlayClass);
+      const turnFront = renderSinglePageLeaf(curSp.right, 'right-leaf', baseUrl, overlayClass);
+      const turnBack = renderSinglePageLeaf(nextSp.left, 'left-leaf', baseUrl, overlayClass);
+      spreadEl.innerHTML = `
+        ${underLeft}
+        ${underRight}
+        <div class="turning-leaf-3d turn-next">
+          <div class="turning-face face-front">${turnFront}<div class="turning-shade"></div></div>
+          <div class="turning-face face-back">${turnBack}<div class="turning-shade"></div></div>
+        </div>
+        <div class="book-spine-crease"></div>
+      `;
+    } else {
+      // Backward turn: underlying shows next left + current right; turning leaf has current left on front & next right on back
+      const underLeft = renderSinglePageLeaf(nextSp.left, 'left-leaf', baseUrl, overlayClass);
+      const underRight = renderSinglePageLeaf(curSp.right, 'right-leaf', baseUrl, overlayClass);
+      const turnFront = renderSinglePageLeaf(curSp.left, 'left-leaf', baseUrl, overlayClass);
+      const turnBack = renderSinglePageLeaf(nextSp.right, 'right-leaf', baseUrl, overlayClass);
+      spreadEl.innerHTML = `
+        ${underLeft}
+        ${underRight}
+        <div class="turning-leaf-3d turn-prev">
+          <div class="turning-face face-front">${turnFront}<div class="turning-shade"></div></div>
+          <div class="turning-face face-back">${turnBack}<div class="turning-shade"></div></div>
+        </div>
+        <div class="book-spine-crease"></div>
+      `;
+    }
+
+    setTimeout(() => {
+      currentSpreadIndex = nextIdx;
+      isFlipping3D = false;
+      renderCurrentPage();
+    }, 780);
+  }
+
+  // Interactive 3D hover tilt on the book stage
+  pageStage.addEventListener('mousemove', (e) => {
+    if (!view3dToggle.checked || isFlipping3D) return;
+    const spreadEl = document.getElementById('openBookSpreadEl');
+    if (!spreadEl) return;
+    const rect = pageStage.getBoundingClientRect();
+    const nx = ((e.clientX - rect.left) / Math.max(1, rect.width) - 0.5) * 2;
+    const ny = ((e.clientY - rect.top) / Math.max(1, rect.height) - 0.5) * 2;
+    const rotY = nx * 7.5;
+    const rotX = 11 - ny * 5.5;
+    spreadEl.style.transform = `rotateX(${rotX.toFixed(2)}deg) rotateY(${rotY.toFixed(2)}deg)`;
+  });
+
+  pageStage.addEventListener('mouseleave', () => {
+    const spreadEl = document.getElementById('openBookSpreadEl');
+    if (spreadEl && view3dToggle.checked) {
+      spreadEl.style.transform = 'rotateX(11deg) rotateY(0deg)';
+    }
+  });
+
+  // Click left/right page leaf to flip
+  pageStage.addEventListener('click', (e) => {
+    if (!currentBook || isFlipping3D || e.target.closest('button, a, input, select')) return;
+    const leaf = e.target.closest('.square-page');
+    if (!leaf) return;
+    if (leaf.classList.contains('right-leaf')) {
+      transitionToSpread(currentSpreadIndex + 1, 'next');
+      if (autoplayIntervalId) restartAutoplayLoop();
+    } else if (leaf.classList.contains('left-leaf')) {
+      transitionToSpread(currentSpreadIndex - 1, 'prev');
+      if (autoplayIntervalId) restartAutoplayLoop();
+    }
+  });
+
+  function stopAutoplay() {
+    if (autoplayIntervalId) {
+      clearInterval(autoplayIntervalId);
+      autoplayIntervalId = null;
+    }
+    if (autoplayProgressTimer) {
+      clearInterval(autoplayProgressTimer);
+      autoplayProgressTimer = null;
+    }
+    autoplayBtn.classList.remove('playing');
+    autoplayBtn.innerHTML = '▶ Autoplay';
+    pageStage.classList.remove('autoplay-active');
+    const bar = document.getElementById('autoplayProgressBar');
+    if (bar) bar.style.width = '0%';
+  }
+
+  function restartAutoplayLoop() {
+    if (autoplayIntervalId) clearInterval(autoplayIntervalId);
+    if (autoplayProgressTimer) clearInterval(autoplayProgressTimer);
+    const delayMs = parseInt(autoplaySpeedSelect.value, 10) || 4000;
+    autoplayStartTime = performance.now();
+    autoplayBtn.classList.add('playing');
+    autoplayBtn.innerHTML = '⏸ Pause Autoplay';
+    pageStage.classList.add('autoplay-active');
+
+    autoplayProgressTimer = setInterval(() => {
+      const bar = document.getElementById('autoplayProgressBar');
+      if (!bar) return;
+      const elapsed = performance.now() - autoplayStartTime;
+      const pct = Math.min(100, (elapsed / delayMs) * 100);
+      bar.style.width = `${pct.toFixed(1)}%`;
+    }, 80);
+
+    autoplayIntervalId = setInterval(() => {
+      if (!currentBook) {
+        stopAutoplay();
+        return;
+      }
+      autoplayStartTime = performance.now();
+      transitionToSpread(currentSpreadIndex + 1, 'next');
+    }, delayMs);
+  }
+
+  autoplayBtn.addEventListener('click', () => {
+    if (autoplayIntervalId) {
+      stopAutoplay();
+    } else {
+      restartAutoplayLoop();
+    }
+  });
+
+  autoplaySpeedSelect.addEventListener('change', () => {
+    if (autoplayIntervalId) restartAutoplayLoop();
+  });
+
+  view3dToggle.addEventListener('change', renderCurrentPage);
+
   window.jumpToSpread = function(idx) {
-    currentSpreadIndex = idx;
-    renderCurrentPage();
+    if (idx === currentSpreadIndex) return;
+    const dir = idx > currentSpreadIndex ? 'next' : 'prev';
+    transitionToSpread(idx, dir);
+    if (autoplayIntervalId) restartAutoplayLoop();
   };
 
   document.getElementById('prevPageBtn').addEventListener('click', () => {
     if (!currentBook) return;
-    const spreads = buildBookSpreads(currentBook);
-    currentSpreadIndex = (currentSpreadIndex - 1 + spreads.length) % spreads.length;
-    renderCurrentPage();
+    transitionToSpread(currentSpreadIndex - 1, 'prev');
+    if (autoplayIntervalId) restartAutoplayLoop();
   });
 
   document.getElementById('nextPageBtn').addEventListener('click', () => {
     if (!currentBook) return;
-    const spreads = buildBookSpreads(currentBook);
-    currentSpreadIndex = (currentSpreadIndex + 1) % spreads.length;
-    renderCurrentPage();
+    transitionToSpread(currentSpreadIndex + 1, 'next');
+    if (autoplayIntervalId) restartAutoplayLoop();
   });
 
   window.addEventListener('keydown', (e) => {
@@ -902,6 +1358,9 @@
       document.getElementById('prevPageBtn').click();
     } else if (e.key === 'ArrowRight') {
       document.getElementById('nextPageBtn').click();
+    } else if (e.key === ' ') {
+      e.preventDefault();
+      autoplayBtn.click();
     }
   });
 
