@@ -573,3 +573,37 @@ def test_page_fill_modes_and_aesthetic_crop_focus() -> None:
     assert (crop_tight[2] - crop_tight[0]) < 1500
     assert (crop_tight[3] - crop_tight[1]) < 1500
     assert faces_ok_tight is True
+
+
+def test_include_captions_toggle_in_pipeline_and_renderers(tmp_path: Path) -> None:
+    """Verify that include_captions=False suppresses captions in PDF and HTML while keeping clean layout."""
+    test_folder = _create_raw_photos_test_folder(tmp_path / "raw_photos")
+
+    # Run with include_captions=False
+    out_no_caps = tmp_path / "out_no_caps"
+    res_no_caps = build_photo_book(
+        folder_path=test_folder,
+        output_root=out_no_caps,
+        include_captions=False,
+    )
+    assert res_no_caps.include_captions is False
+    html_no_caps = Path(res_no_caps.html_preview_path).read_text(encoding="utf-8")
+    assert '<div class="slot-subcaption">' not in html_no_caps
+    assert '<p class="page-group-caption">' not in html_no_caps
+    assert '<p class="cover-hero-caption">' not in html_no_caps
+    pdf_no_caps = Path(res_no_caps.pdf_path).read_bytes()
+    assert pdf_no_caps.startswith(b"%PDF-")
+
+    # Run with include_captions=True (default)
+    out_caps = tmp_path / "out_caps"
+    res_caps = build_photo_book(
+        folder_path=test_folder,
+        output_root=out_caps,
+        include_captions=True,
+    )
+    assert res_caps.include_captions is True
+    html_caps = Path(res_caps.html_preview_path).read_text(encoding="utf-8")
+    assert '<p class="cover-hero-caption">' in html_caps or '<p class="page-group-caption">' in html_caps
+    pdf_caps = Path(res_caps.pdf_path).read_bytes()
+    assert pdf_caps.startswith(b"%PDF-")
+

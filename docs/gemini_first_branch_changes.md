@@ -18,7 +18,8 @@ The **`Gemini-first`** branch shifts the paradigm to a **Smart Hybrid Pipeline**
 In addition to the Smart Hybrid pipeline, this branch introduces:
 - **Configurable Page Layout Fill (`high`, `medium`, `low`)**: Allowing users to maximize photo coverage across the 10×10" page with tight margins (down to 0.25") while preventing header/caption overlap.
 - **Tight Aesthetic Smart Cropping (`tight`, `balanced`, `wide`)**: Intelligently trimming peripheral dead space (sky, ground, walls) to emphasize human subjects while guaranteeing 100% face safety.
-- **Dashboard UI Controls**: Direct dropdowns and status badges on the web UI for fill modes and cropping focus.
+- **Photo Captions Toggle (`include_captions`)**: Allowing users to choose whether to render AI-generated story captions under photos or create a clean, minimalist photo-only gallery.
+- **Dashboard UI Controls**: Direct dropdowns and status badges on the web UI for fill modes, cropping focus, and caption display.
 
 ---
 
@@ -149,7 +150,20 @@ Located in [`photobook/cropper.py`](../photobook/cropper.py), the cropping engin
 
 ---
 
-## 6. Dashboard & User Interface Enhancements
+## 6. Feature Detail: Photo Captions Toggle (`include_captions`)
+
+### The Purpose
+Some users want a rich documentary narrative with AI-synthesized story lines and moment descriptions under each photo, while others prefer a minimalist, clean fine-art photography monograph with zero text beneath individual images.
+
+### Implementation
+- **Data Model**: Added `include_captions: bool = True` to `BuildRequest` ([`app.py`](../app.py)) and `PhotoBookResult` ([`photobook/models.py`](../photobook/models.py)).
+- **PDF Generation**: In [`photobook/renderer.py`](../photobook/renderer.py), when `include_captions=False`, slot subcaptions, page group captions, and cover hero photo captions are cleanly omitted. Outer borders, chapter headers, and page numbering remain perfectly balanced.
+- **Standalone HTML Book & 3D Viewer**: In [`photobook/renderer.py`](../photobook/renderer.py) and [`static/index.html`](../static/index.html), caption DOM nodes (`.slot-subcaption`, `.page-group-caption`, `.cover-hero-caption`, `.slot-individual-cap`) are suppressed dynamically, letting the imagery command full visual attention.
+- **Audit Logs**: Deep Gemini semantic captioning is still preserved in `photo_analysis.json` and `photo_analysis.md` for auditing, searchability, and chronological clustering.
+
+---
+
+## 7. Dashboard & User Interface Enhancements
 
 File: [`static/index.html`](../static/index.html)
 
@@ -163,46 +177,46 @@ File: [`static/index.html`](../static/index.html)
      - `Tight (Aesthetic close-up, remove dead space)` *(Default)*
      - `Balanced (Standard balanced framing)`
      - `Wide (Maximum environmental context)`
-3. **Live Status Badges**:
+3. **Photo Captions Selector**:
+   - Dropdown under Settings:
+     - `Include Captions (Story & notes under photos)` *(Default)*
+     - `No Captions (Clean photo-only gallery)`
+4. **Live Status Badges**:
    - Dashboard summary bar displays active configuration pills:
      - `Fill: High` / `Fill: Medium` / `Fill: Low`
      - `Crop: Tight` / `Crop: Balanced` / `Crop: Wide`
-4. **Interactive 3D Viewer & Controls**:
+     - `Captions: Yes` / `Captions: No`
+5. **Interactive 3D Viewer & Controls**:
    - Integrates with the 3D Lay-Flat viewer, book flipping, and autoplay features.
 
 ---
 
-## 7. API and Data Model Changes
+## 8. API and Data Model Changes
 
 ### `app.py`
-- Updated `/api/build` endpoint:
+- Updated `/api/build` and `/api/build-stream` endpoints:
   ```python
   class BuildRequest(BaseModel):
-      photos_dir: str
+      photos_dir: Optional[str] = None
+      folder_path: Optional[str] = None
       title: str = "Our Unforgettable Journey"
       subtitle: str = "A Curated Visual Chronicle"
       target_pages: int = 40
       max_book_photos: int = 90
-      page_fill_mode: str = "high"     # "low", "medium", "high"
-      crop_focus: str = "tight"        # "tight", "balanced", "wide"
+      page_fill_mode: str = "high"       # "low", "medium", "high"
+      crop_focus: str = "tight"          # "tight", "balanced", "wide"
+      include_captions: bool = True      # True = show captions, False = clean gallery
   ```
 
 ### `photobook/models.py`
-- Added `page_fill_mode: str = "high"` and `crop_focus: str = "tight"` to `PhotoBookResult` for persistence in report JSON and metadata.
+- Added `page_fill_mode: str = "high"`, `crop_focus: str = "tight"`, and `include_captions: bool = True` to `PhotoBookResult`.
 
 ### `photobook/pipeline.py`
-- Pipeline coordinates the full Smart Hybrid flow:
-  ```python
-  def generate_photobook(
-      ...,
-      page_fill_mode: str = "high",
-      crop_focus: str = "tight",
-  ) -> PhotoBookResult:
-  ```
+- `build_photo_book` accepts `include_captions: bool = True` and threads it to renderers and `PhotoBookResult`.
 
 ---
 
-## 8. Test Suite & Verification
+## 9. Test Suite & Verification
 
 All changes are covered by comprehensive automated tests in [`tests/test_photobook.py`](../tests/test_photobook.py):
 
@@ -215,26 +229,29 @@ All changes are covered by comprehensive automated tests in [`tests/test_photobo
    - Validates slot dimensions and margins for `low`, `medium`, and `high` fill modes across multiple templates.
    - Confirms that `high` fill slots span >= 9.20" width and >= 7.50" height.
    - Tests `tight`, `balanced`, and `wide` crop focus on images with face bounding boxes, confirming dead space removal and 100% face safety.
+3. **`test_include_captions_toggle_in_pipeline_and_renderers`**:
+   - Verifies that `include_captions=False` suppresses slot captions and footer captions in both PDF and HTML renders while preserving valid PDF output.
+   - Verifies that `include_captions=True` renders story captions under photos.
 
 ### Test Execution
 ```bash
 uv run pytest
-# Output: 11 passed in 1.17s
+# Output: 12 passed in 1.53s
 ```
 
 ---
 
-## 9. Summary of Modified Files on `Gemini-first`
+## 10. Summary of Modified Files on `Gemini-first`
 
 | File | Primary Changes |
 |---|---|
 | [`photobook/analyzer.py`](../photobook/analyzer.py) | Added `coarse_filter_photos`, `deduplicate_and_curate_with_gemini`, `PAGE_TEMPLATES_BY_FILL`, and `get_page_templates`. |
 | [`photobook/cropper.py`](../photobook/cropper.py) | Added `crop_focus` parameter (`tight`, `balanced`, `wide`) to `compute_aesthetic_crop` with dead-space removal and face preservation. |
-| [`photobook/pipeline.py`](../photobook/pipeline.py) | Implemented the 8-stage Smart Hybrid orchestration calling Gemini on all unique photos before downsampling. |
-| [`photobook/models.py`](../photobook/models.py) | Added `page_fill_mode` and `crop_focus` fields to `PhotoBookResult`. |
-| [`app.py`](../app.py) | Exposed `page_fill_mode` and `crop_focus` on `/api/build` REST API. |
-| [`static/index.html`](../static/index.html) | Added Fill and Crop dropdown controls and live status badges to Dashboard UI. |
-| [`photobook/renderer.py`](../photobook/renderer.py) | Documented fill mode and crop focus in generated markdown analysis logs. |
-| [`tests/test_photobook.py`](../tests/test_photobook.py) | Added end-to-end tests for Smart Hybrid flow, fill modes, and aesthetic cropping. |
+| [`photobook/pipeline.py`](../photobook/pipeline.py) | Implemented the 8-stage Smart Hybrid orchestration and threaded `include_captions`. |
+| [`photobook/models.py`](../photobook/models.py) | Added `page_fill_mode`, `crop_focus`, and `include_captions` fields to `PhotoBookResult`. |
+| [`app.py`](../app.py) | Exposed `page_fill_mode`, `crop_focus`, and `include_captions` on REST endpoints. |
+| [`static/index.html`](../static/index.html) | Added Fill, Crop, and Captions dropdown controls, live status badges, and reactive spread rendering. |
+| [`photobook/renderer.py`](../photobook/renderer.py) | Conditioned slot subcaptions, page captions, and cover hero captions on `include_captions` in PDF and HTML. |
+| [`tests/test_photobook.py`](../tests/test_photobook.py) | Added end-to-end tests for Smart Hybrid flow, fill modes, aesthetic cropping, and captions toggle. |
 | [`docs/pipeline_flow.md`](pipeline_flow.md) | Updated pipeline diagram and stage descriptions to reflect the Smart Hybrid model. |
-| [`docs/gemini_first_branch_changes.md`](gemini_first_branch_changes.md) | This master documentation file detailing all branch changes. |
+| [`docs/gemini_first_branch_changes.md`](gemini_first_branch_changes.md) | Master documentation file detailing all branch changes. |

@@ -78,6 +78,10 @@ class BuildRequest(BaseModel):
         default="tight",
         description="Aesthetic crop focus: 'tight', 'balanced', or 'wide'",
     )
+    include_captions: bool = Field(
+        default=True,
+        description="Whether to render captions under photos in the book ('true' or 'false')",
+    )
     api_key: Optional[str] = Field(default=None, description="Optional Gemini API key override")
 
 
@@ -143,6 +147,7 @@ def build_book_endpoint(req: BuildRequest) -> PhotoBookResult:
             max_book_photos=req.max_book_photos,
             page_fill_mode=req.page_fill_mode,
             crop_focus=req.crop_focus,
+            include_captions=req.include_captions,
             api_key=req.api_key,
         )
         _BOOKS[result.book_id] = result
@@ -181,6 +186,7 @@ def build_book_stream_endpoint(req: BuildRequest) -> StreamingResponse:
                 max_book_photos=req.max_book_photos,
                 page_fill_mode=req.page_fill_mode,
                 crop_focus=req.crop_focus,
+                include_captions=req.include_captions,
                 api_key=req.api_key,
                 progress_cb=_progress,
             )

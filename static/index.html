@@ -754,6 +754,14 @@
         </div>
       </div>
 
+      <div style="margin-bottom: 14px;">
+        <label for="captionsSelect">Photo Captions</label>
+        <select id="captionsSelect">
+          <option value="true" selected>Include Captions (Story &amp; notes under photos)</option>
+          <option value="false">No Captions (Clean photo-only gallery)</option>
+        </select>
+      </div>
+
       <label for="apiKeyInput">Gemini API Key (optional if set in env)</label>
       <input type="password" id="apiKeyInput" placeholder="Uses GEMINI_API_KEY env var or local vision fallback" />
 
@@ -952,6 +960,7 @@
         max_book_photos: parseInt(document.getElementById('maxPhotosSelect').value, 10),
         page_fill_mode: document.getElementById('pageFillSelect').value,
         crop_focus: document.getElementById('cropFocusSelect').value,
+        include_captions: document.getElementById('captionsSelect').value === 'true',
         api_key: document.getElementById('apiKeyInput').value.trim() || null,
       };
       const res = await fetch('/api/build-stream', {
@@ -1028,6 +1037,7 @@
       <div class="stat-pill"><b>${book.pages.length}</b> 10×10" Pages</div>
       <div class="stat-pill"><b>Fill:</b> ${escapeHtml(book.page_fill_mode || 'high')}</div>
       <div class="stat-pill"><b>Crop:</b> ${escapeHtml(book.crop_focus || 'tight')}</div>
+      <div class="stat-pill"><b>Captions:</b> ${book.include_captions !== false ? 'Yes' : 'No'}</div>
       <div class="stat-pill"><b>${book.hero_cover_photo_id}</b> Hero Cover</div>
     `;
 
@@ -1105,6 +1115,7 @@
         </div>
       `;
     }
+    const showCaps = currentBook.include_captions !== false;
     if (pg.page_type === 'cover') {
       const s = pg.slots[0];
       return `
@@ -1119,8 +1130,8 @@
             <div class="slot-badge">HERO COVER • ${escapeHtml(s.filename)} • Faces: ${s.faces_count} (100% preserved)</div>
           </div>
           <div class="page-footer-box">
-            <p class="page-caption-text">${escapeHtml(s.caption)}</p>
-            <div style="font-size:11px;color:var(--gold);letter-spacing:0.06em;">${escapeHtml(pg.group_caption || currentBook.subtitle)}</div>
+            ${showCaps && s.caption ? `<p class="page-caption-text">${escapeHtml(s.caption)}</p>` : ''}
+            <div style="font-size:11px;color:var(--gold);letter-spacing:0.06em;">${escapeHtml(showCaps ? (pg.group_caption || currentBook.subtitle) : currentBook.subtitle)}</div>
           </div>
         </div>
       `;
@@ -1130,7 +1141,7 @@
       <div class="slot-box" style="left:${s.x_in*10}%;top:${s.y_in*10}%;width:${s.width_in*10}%;height:${s.height_in*10}%;">
         <img src="${baseUrl}/${s.cropped_image_relpath}" alt="${escapeHtml(s.filename)}" />
         <div class="slot-badge">Slot ${idx + 1} (${s.width_in}×${s.height_in}in) • Faces: ${s.faces_count} (${s.faces_preserved ? 'Safe' : 'Adjusted'})</div>
-        ${pg.slots.length > 1 ? `<div class="slot-individual-cap">${escapeHtml(s.caption)}</div>` : ''}
+        ${showCaps && pg.slots.length > 1 && s.caption ? `<div class="slot-individual-cap">${escapeHtml(s.caption)}</div>` : ''}
       </div>
     `).join('');
 
@@ -1141,7 +1152,8 @@
          </div>`
       : '';
 
-    const footerCap = pg.group_caption || (pg.slots[0] ? pg.slots[0].caption : '');
+    const footerCap = showCaps ? (pg.group_caption || (pg.slots[0] ? pg.slots[0].caption : '')) : '';
+    const footerCapHtml = footerCap ? `<p class="page-caption-text" style="font-size:11px;">${escapeHtml(footerCap)}</p>` : '';
     const pageNumPos = leafSideClass === 'left-leaf' ? 'left: 0; right: auto;' : 'right: 0; left: auto;';
     return `
       <div class="square-page interior ${leafSideClass} ${overlayClass}">
@@ -1149,7 +1161,7 @@
         ${headerHtml}
         ${slotsHtml}
         <div class="page-footer-box">
-          <p class="page-caption-text" style="font-size:11px;">${escapeHtml(footerCap)}</p>
+          ${footerCapHtml}
           <span class="page-number-tag" style="${pageNumPos}">Page ${pg.page_number}</span>
         </div>
       </div>

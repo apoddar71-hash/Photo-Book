@@ -268,6 +268,7 @@ class PhotoBookResult(BaseModel):
     book_size_inches: tuple[float, float] = (10.0, 10.0)
     page_fill_mode: str = "high"
     crop_focus: str = "tight"
+    include_captions: bool = True
     hero_cover_photo_id: str
     total_scanned: int
     total_selected: int

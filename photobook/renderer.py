@@ -92,19 +92,21 @@ def render_pdf_photobook(result: PhotoBookResult, out_pdf_path: str | Path) -> P
                 if img_file.exists():
                     c.drawImage(str(img_file), x_pt, y_pt, width=w_pt, height=h_pt, preserveAspectRatio=False)
 
-                # Hero caption & book subtitle below hero image
-                c.setFillColor(HexColor("#E8E2D5"))
-                c.setFont("Times-Italic", 11)
-                cap_lines = _wrap_text_lines(c, slot.caption, "Times-Italic", 11, 7.8 * inch, max_lines=2)
-                cur_y = y_pt - 0.32 * inch
-                for ln in cap_lines:
-                    c.drawCentredString(PAGE_W / 2.0, cur_y, ln)
-                    cur_y -= 0.19 * inch
+                # Hero caption below hero image (if captions enabled)
+                if result.include_captions and slot.caption:
+                    c.setFillColor(HexColor("#E8E2D5"))
+                    c.setFont("Times-Italic", 11)
+                    cap_lines = _wrap_text_lines(c, slot.caption, "Times-Italic", 11, 7.8 * inch, max_lines=2)
+                    cur_y = y_pt - 0.32 * inch
+                    for ln in cap_lines:
+                        c.drawCentredString(PAGE_W / 2.0, cur_y, ln)
+                        cur_y -= 0.19 * inch
 
             # Subtitle at bottom of cover (well inside the 0.32in bottom border)
             c.setFillColor(HexColor("#C5A46D"))
             c.setFont("Helvetica", 9.5)
-            c.drawCentredString(PAGE_W / 2.0, 0.58 * inch, page.group_caption or result.subtitle)
+            cov_sub = (page.group_caption if result.include_captions else None) or result.subtitle
+            c.drawCentredString(PAGE_W / 2.0, 0.58 * inch, cov_sub)
             c.showPage()
             continue
 
@@ -151,8 +153,8 @@ def render_pdf_photobook(result: PhotoBookResult, out_pdf_path: str | Path) -> P
             if img_file.exists():
                 c.drawImage(str(img_file), x_pt, y_pt, width=w_pt, height=h_pt, preserveAspectRatio=False)
 
-            # Individual slot caption (up to 2 lines; fits cleanly inside the 0.75in = 54pt gap)
-            if len(page.slots) > 1 and slot.caption:
+            # Individual slot caption (up to 2 lines; fits cleanly inside the gap)
+            if result.include_captions and len(page.slots) > 1 and slot.caption:
                 c.setFillColor(HexColor("#4A4F55"))
                 c.setFont("Times-Italic", 8.5)
                 lines = _wrap_text_lines(c, slot.caption, "Times-Italic", 8.5, w_pt - 4, max_lines=2)
@@ -162,15 +164,16 @@ def render_pdf_photobook(result: PhotoBookResult, out_pdf_path: str | Path) -> P
                     sub_y -= 10.5
 
         # Page / Group Caption (1-2 lines max) at bottom of 10x10 page
-        footer_caption = page.group_caption or (page.slots[0].caption if page.slots else "")
-        if footer_caption:
-            c.setFillColor(HexColor("#22262C"))
-            c.setFont("Times-Roman", 11)
-            cap_lines = _wrap_text_lines(c, footer_caption, "Times-Roman", 11, 8.2 * inch, max_lines=2)
-            base_y = 0.92 * inch if len(cap_lines) > 1 else 0.78 * inch
-            for ln in cap_lines:
-                c.drawCentredString(PAGE_W / 2.0, base_y, ln)
-                base_y -= 0.20 * inch
+        if result.include_captions:
+            footer_caption = page.group_caption or (page.slots[0].caption if page.slots else "")
+            if footer_caption:
+                c.setFillColor(HexColor("#22262C"))
+                c.setFont("Times-Roman", 11)
+                cap_lines = _wrap_text_lines(c, footer_caption, "Times-Roman", 11, 8.2 * inch, max_lines=2)
+                base_y = 0.92 * inch if len(cap_lines) > 1 else 0.78 * inch
+                for ln in cap_lines:
+                    c.drawCentredString(PAGE_W / 2.0, base_y, ln)
+                    base_y -= 0.20 * inch
 
         # Page number in bottom-right corner
         c.setFillColor(HexColor("#8A8478"))
@@ -204,7 +207,7 @@ def save_analysis_files(result: PhotoBookResult) -> tuple[Path, Path]:
     if result.model_note:
         lines.append(f"- **Model Note:** {result.model_note}")
     lines += [
-        f"- **Book Dimensions:** `10.0 × 10.0 inches` (Page Fill: `{result.page_fill_mode}`, Crop Focus: `{result.crop_focus}`)",
+        f"- **Book Dimensions:** `10.0 × 10.0 inches` (Page Fill: `{result.page_fill_mode}`, Crop Focus: `{result.crop_focus}`, Captions: `{'Yes' if result.include_captions else 'No'}`)",
         f"- **Hero Cover Photo:** `{result.hero_cover_photo_id}`",
         f"- **Summary Counts:** {result.total_scanned} scanned → **{result.total_selected} selected**, "
         f"{result.total_excluded_duplicates} duplicates removed, {result.total_excluded_similar} similar burst shots removed, "
@@ -309,8 +312,8 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
                     <img src="{uri}" alt="{html.escape(slot.filename)}" />
                   </div>
                   <div class="cover-footer">
-                    <p class="cover-hero-caption">{html.escape(slot.caption)}</p>
-                    <div class="cover-subtitle">{html.escape(pg.group_caption or result.subtitle)}</div>
+                    {f'<p class="cover-hero-caption">{html.escape(slot.caption)}</p>' if (result.include_captions and slot.caption) else ''}
+                    <div class="cover-subtitle">{html.escape((pg.group_caption if result.include_captions else None) or result.subtitle)}</div>
                   </div>
                 </section>
                 """
@@ -326,7 +329,7 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
             height_pct = slot.height_in * 10.0
             subcap = (
                 f'<div class="slot-subcaption">{html.escape(slot.caption)}</div>'
-                if len(pg.slots) > 1 and slot.caption
+                if result.include_captions and len(pg.slots) > 1 and slot.caption
                 else ""
             )
             slots_html.append(
@@ -348,7 +351,12 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
             if pg.chapter_title
             else ""
         )
-        footer_cap = pg.group_caption or (pg.slots[0].caption if pg.slots else "")
+        footer_cap = (pg.group_caption or (pg.slots[0].caption if pg.slots else "")) if result.include_captions else ""
+        footer_cap_html = (
+            f'<p class="page-group-caption">{html.escape(footer_cap)}</p>'
+            if footer_cap
+            else ""
+        )
         page_cards_html.append(
             f"""
             <section class="book-page interior-page" data-page="{pg.page_number}">
@@ -356,7 +364,7 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
               {chapter_html}
               {''.join(slots_html)}
               <div class="page-footer">
-                <p class="page-group-caption">{html.escape(footer_cap)}</p>
+                {footer_cap_html}
                 <span class="page-num">Page {pg.page_number}</span>
               </div>
             </section>

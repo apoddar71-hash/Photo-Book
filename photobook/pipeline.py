@@ -38,6 +38,7 @@ def build_photo_book(
     max_book_photos: int = 90,
     page_fill_mode: str = "high",
     crop_focus: str = "tight",
+    include_captions: bool = True,
     api_key: Optional[str] = None,
     progress_cb: Optional[Callable[[str, int, int], None]] = None,
 ) -> PhotoBookResult:
@@ -181,6 +182,7 @@ def build_photo_book(
         book_size_inches=(10.0, 10.0),
         page_fill_mode=page_fill_mode,
         crop_focus=crop_focus,
+        include_captions=include_captions,
         hero_cover_photo_id=hero_id,
         total_scanned=len(photos),
         total_selected=len(selected),
