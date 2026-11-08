@@ -83,8 +83,15 @@ def compute_aesthetic_crop(
     target_aspect: float,
     faces_boxes: Optional[list[BoundingBox]] = None,
     salient_box: Optional[BoundingBox] = None,
+    crop_focus: str = "tight",
 ) -> tuple[tuple[int, int, int, int], tuple[int, int, int, int], bool]:
     """Compute a face-safe, aesthetically framed crop rectangle.
+
+    crop_focus:
+      - "tight" (default): Actively zooms in toward the salient subject and faces, removing
+        unimportant background clutter and peripheral dead space while keeping 100% of faces safe.
+      - "balanced": Moderate zoom (preserves standard context around the subject).
+      - "wide": Maximum uncropped view (full-span original frame).
 
     Returns:
       - crop_box_px: (left, top, right, bottom) in pixel coordinates
@@ -96,38 +103,104 @@ def compute_aesthetic_crop(
     face_union = union_boxes(padded_faces)
     raw_face_union = union_boxes(faces_boxes)
 
-    # Determine largest possible crop window of target_aspect inside (width, height)
+    # 1. Outer maximum crop window matching target_aspect inside (width, height)
     img_aspect = width / max(1.0, float(height))
     if img_aspect >= target_aspect:
-        # Image is wider than slot -> full height, crop width
-        crop_h = height
-        crop_w = max(1, min(width, int(round(height * target_aspect))))
+        max_crop_h = height
+        max_crop_w = max(1, min(width, int(round(height * target_aspect))))
     else:
-        # Image is taller than slot -> full width, crop height
-        crop_w = width
-        crop_h = max(1, min(height, int(round(width / target_aspect))))
+        max_crop_w = width
+        max_crop_h = max(1, min(height, int(round(width / target_aspect))))
 
-    # Determine desired focal center (cx, cy) in pixels
+    # 2. Determine focal center (cx, cy) and subject bounds (subj_l, subj_t, subj_r, subj_b)
     if face_union is not None:
         fl, ft, fr, fb = face_union.to_pixels(width, height)
         face_cx = 0.5 * (fl + fr)
-        # Rule-of-thirds bias: place faces slightly in upper 42% of frame when cropping vertically
-        face_cy = 0.5 * (ft + fb) + 0.08 * crop_h
+        face_cy = 0.5 * (ft + fb)
         if salient_box is not None:
             sl, st, sr, sb = salient_box.to_pixels(width, height)
+            subj_l = min(fl, sl)
+            subj_t = min(ft, st)
+            subj_r = max(fr, sr)
+            subj_b = max(fb, sb)
             sal_cx = 0.5 * (sl + sr)
             sal_cy = 0.5 * (st + sb)
-            cx = 0.78 * face_cx + 0.22 * sal_cx
-            cy = 0.78 * face_cy + 0.22 * sal_cy
+            cx = 0.75 * face_cx + 0.25 * sal_cx
+            cy = 0.75 * face_cy + 0.25 * sal_cy
         else:
+            subj_l, subj_t, subj_r, subj_b = fl, ft, fr, fb
             cx, cy = face_cx, face_cy
     elif salient_box is not None:
         sl, st, sr, sb = salient_box.to_pixels(width, height)
+        subj_l, subj_t, subj_r, subj_b = sl, st, sr, sb
         cx = 0.5 * (sl + sr)
         cy = 0.5 * (st + sb)
     else:
+        # Default central subject (central 60% of frame)
+        subj_l = int(width * 0.20)
+        subj_r = int(width * 0.80)
+        subj_t = int(height * 0.20)
+        subj_b = int(height * 0.80)
         cx = width * 0.5
         cy = height * 0.5
+
+    subj_w = max(10, subj_r - subj_l)
+    subj_h = max(10, subj_b - subj_t)
+
+    # 3. Determine aesthetic crop dimensions based on crop_focus
+    focus_mode = (crop_focus or "tight").lower().strip()
+    if focus_mode == "tight":
+        # Zoom in so subject is prominent; remove peripheral empty background
+        target_span_w = subj_w * 1.40
+        target_span_h = subj_h * 1.40
+        scaled_w = target_span_w
+        scaled_h = target_span_w / target_aspect
+        if scaled_h < target_span_h:
+            scaled_h = target_span_h
+            scaled_w = target_span_h * target_aspect
+
+        # Minimum crop window: at least 68% of max crop, at most max crop
+        crop_w = int(round(min(max_crop_w, max(max_crop_w * 0.68, scaled_w))))
+        crop_h = int(round(crop_w / target_aspect))
+    elif focus_mode == "balanced":
+        target_span_w = subj_w * 1.75
+        target_span_h = subj_h * 1.75
+        scaled_w = target_span_w
+        scaled_h = target_span_w / target_aspect
+        if scaled_h < target_span_h:
+            scaled_h = target_span_h
+            scaled_w = target_span_h * target_aspect
+
+        crop_w = int(round(min(max_crop_w, max(max_crop_w * 0.84, scaled_w))))
+        crop_h = int(round(crop_w / target_aspect))
+    else:
+        # "wide": legacy full-span crop
+        crop_w = max_crop_w
+        crop_h = max_crop_h
+
+    # 4. Guarantee crop window is large enough to contain all padded faces
+    if face_union is not None:
+        fl, ft, fr, fb = face_union.to_pixels(width, height)
+        fw = fr - fl
+        fh = fb - ft
+        if crop_w < fw:
+            crop_w = min(max_crop_w, int(round(fw * 1.05)))
+            crop_h = int(round(crop_w / target_aspect))
+        if crop_h < fh:
+            crop_h = min(max_crop_h, int(round(fh * 1.05)))
+            crop_w = int(round(crop_h * target_aspect))
+
+    # Keep within image bounds
+    if crop_w > width:
+        crop_w = width
+        crop_h = max(1, int(round(crop_w / target_aspect)))
+    if crop_h > height:
+        crop_h = height
+        crop_w = max(1, int(round(crop_h * target_aspect)))
+
+    # Vertical rule-of-thirds adjustment for faces (placing eyes/foreheads in upper 40-42%)
+    if face_union is not None:
+        cy = cy - 0.05 * crop_h
 
     # Initial crop box centered on (cx, cy), clamped to image bounds
     left = int(round(cx - crop_w * 0.5))
@@ -137,7 +210,7 @@ def compute_aesthetic_crop(
     right = left + crop_w
     bottom = top + crop_h
 
-    # Enforce strict face protection: shift crop window so padded face_union (or raw_face_union) stays inside
+    # 5. Enforce strict face protection: shift crop window so face_union stays inside
     for guard_box in (face_union, raw_face_union):
         if guard_box is None:
             continue
@@ -153,7 +226,6 @@ def compute_aesthetic_crop(
                 right = gr
                 left = right - crop_w
         else:
-            # Faces span wider than crop_w: center horizontally on the faces
             left = max(0, min(width - crop_w, int(round(0.5 * (gl + gr) - 0.5 * crop_w))))
             right = left + crop_w
 
@@ -165,7 +237,6 @@ def compute_aesthetic_crop(
                 bottom = gb
                 top = bottom - crop_h
         else:
-            # Faces span taller than crop_h: center vertically on the faces
             top = max(0, min(height - crop_h, int(round(0.5 * (gt + gb) - 0.5 * crop_h))))
             bottom = top + crop_h
 
@@ -185,6 +256,7 @@ def can_fit_aspect_without_cutting_faces(
     height: int,
     target_aspect: float,
     faces_boxes: list[BoundingBox],
+    crop_focus: str = "tight",
 ) -> bool:
     """Return True if cropping (width, height) to target_aspect preserves all faces."""
     if not faces_boxes:
@@ -194,6 +266,7 @@ def can_fit_aspect_without_cutting_faces(
         height=height,
         target_aspect=target_aspect,
         faces_boxes=faces_boxes,
+        crop_focus=crop_focus,
     )
     return faces_ok
 

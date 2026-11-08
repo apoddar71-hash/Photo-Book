@@ -735,6 +735,25 @@
         </div>
       </div>
 
+      <div class="row-2">
+        <div>
+          <label for="pageFillSelect">Page Layout Fill</label>
+          <select id="pageFillSelect">
+            <option value="high" selected>High Fill (Maximized • Minimal Gaps)</option>
+            <option value="medium">Medium Fill (Balanced Margins)</option>
+            <option value="low">Low Fill (Generous White Margins)</option>
+          </select>
+        </div>
+        <div>
+          <label for="cropFocusSelect">Aesthetic Crop Focus</label>
+          <select id="cropFocusSelect">
+            <option value="tight" selected>Tight &amp; Focused (Removes Dead Space)</option>
+            <option value="balanced">Balanced (Standard Framing)</option>
+            <option value="wide">Wide / Uncropped (Maximum Scene)</option>
+          </select>
+        </div>
+      </div>
+
       <label for="apiKeyInput">Gemini API Key (optional if set in env)</label>
       <input type="password" id="apiKeyInput" placeholder="Uses GEMINI_API_KEY env var or local vision fallback" />
 
@@ -931,6 +950,8 @@
         min_analysis_px: minPx,
         max_analysis_px: maxPx,
         max_book_photos: parseInt(document.getElementById('maxPhotosSelect').value, 10),
+        page_fill_mode: document.getElementById('pageFillSelect').value,
+        crop_focus: document.getElementById('cropFocusSelect').value,
         api_key: document.getElementById('apiKeyInput').value.trim() || null,
       };
       const res = await fetch('/api/build-stream', {
@@ -1005,6 +1026,8 @@
       <div class="stat-pill"><b>${book.total_excluded_similar}</b> Similar Burst Removed</div>
       <div class="stat-pill"><b>${book.total_excluded_documents}</b> Documents Removed</div>
       <div class="stat-pill"><b>${book.pages.length}</b> 10×10" Pages</div>
+      <div class="stat-pill"><b>Fill:</b> ${escapeHtml(book.page_fill_mode || 'high')}</div>
+      <div class="stat-pill"><b>Crop:</b> ${escapeHtml(book.crop_focus || 'tight')}</div>
       <div class="stat-pill"><b>${book.hero_cover_photo_id}</b> Hero Cover</div>
     `;
 

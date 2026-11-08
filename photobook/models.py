@@ -266,6 +266,8 @@ class PhotoBookResult(BaseModel):
     media_resolution: str = "high"
     analysis_pixel_range: str = "1,120 to 2,240 px"
     book_size_inches: tuple[float, float] = (10.0, 10.0)
+    page_fill_mode: str = "high"
+    crop_focus: str = "tight"
     hero_cover_photo_id: str
     total_scanned: int
     total_selected: int

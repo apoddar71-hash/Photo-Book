@@ -70,6 +70,14 @@ class BuildRequest(BaseModel):
         le=1000,
         description="Maximum curated photos to include in the book (0 = include all non-duplicate photos)",
     )
+    page_fill_mode: str = Field(
+        default="high",
+        description="Page layout coverage: 'low', 'medium', or 'high'",
+    )
+    crop_focus: str = Field(
+        default="tight",
+        description="Aesthetic crop focus: 'tight', 'balanced', or 'wide'",
+    )
     api_key: Optional[str] = Field(default=None, description="Optional Gemini API key override")
 
 
@@ -133,6 +141,8 @@ def build_book_endpoint(req: BuildRequest) -> PhotoBookResult:
             min_analysis_px=req.min_analysis_px,
             max_analysis_px=req.max_analysis_px,
             max_book_photos=req.max_book_photos,
+            page_fill_mode=req.page_fill_mode,
+            crop_focus=req.crop_focus,
             api_key=req.api_key,
         )
         _BOOKS[result.book_id] = result
@@ -163,11 +173,14 @@ def build_book_stream_endpoint(req: BuildRequest) -> StreamingResponse:
                 thinking_level=req.thinking_level,
                 curation_model=req.curation_model,
                 hero_model=req.hero_model,
+                layout_model=req.layout_model,
                 batch_size=req.batch_size,
                 media_resolution=req.media_resolution,
                 min_analysis_px=req.min_analysis_px,
                 max_analysis_px=req.max_analysis_px,
                 max_book_photos=req.max_book_photos,
+                page_fill_mode=req.page_fill_mode,
+                crop_focus=req.crop_focus,
                 api_key=req.api_key,
                 progress_cb=_progress,
             )

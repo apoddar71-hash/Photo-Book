@@ -520,3 +520,56 @@ def test_smart_hybrid_gemini_first_flow() -> None:
     assert curated[0].photo_id == "burst_02"
     assert p_blink.status == "excluded_similar"
     assert p_blink.duplicate_of == "burst_02"
+
+
+def test_page_fill_modes_and_aesthetic_crop_focus() -> None:
+    """Verify page fill modes (high, medium, low) and aesthetic crop focus (tight, balanced, wide)."""
+    from photobook.analyzer import get_page_templates
+
+    tpls_high = get_page_templates("high")
+    tpls_med = get_page_templates("medium")
+    tpls_low = get_page_templates("low")
+
+    # High fill mode occupies substantially more page area with minimal margins
+    w_high = tpls_high["single_full_square"][0][2]
+    h_high = tpls_high["single_full_square"][0][3]
+    w_low = tpls_low["single_full_square"][0][2]
+    h_low = tpls_low["single_full_square"][0][3]
+
+    assert w_high > w_low
+    assert h_high > h_low
+    assert w_high == 9.20
+    assert h_high == 7.50
+    assert w_low == 8.10
+    assert h_low == 6.15
+
+    # Verify aesthetic crop focus: tight zooms in, wide preserves full span
+    face = BoundingBox(ymin=350, xmin=400, ymax=550, xmax=600, label="face")  # central face
+    salient = BoundingBox(ymin=300, xmin=350, ymax=650, xmax=650, label="subject")
+
+    crop_tight, _, faces_ok_tight = compute_aesthetic_crop(
+        width=2000,
+        height=1500,
+        target_aspect=1.0,
+        faces_boxes=[face],
+        salient_box=salient,
+        crop_focus="tight",
+    )
+    crop_wide, _, faces_ok_wide = compute_aesthetic_crop(
+        width=2000,
+        height=1500,
+        target_aspect=1.0,
+        faces_boxes=[face],
+        salient_box=salient,
+        crop_focus="wide",
+    )
+
+    # Wide crop uses full available height (1500x1500)
+    assert (crop_wide[2] - crop_wide[0]) == 1500
+    assert (crop_wide[3] - crop_wide[1]) == 1500
+    assert faces_ok_wide is True
+
+    # Tight crop zooms in closer to the subject, removing dead space (smaller crop window than 1500)
+    assert (crop_tight[2] - crop_tight[0]) < 1500
+    assert (crop_tight[3] - crop_tight[1]) < 1500
+    assert faces_ok_tight is True

@@ -1155,63 +1155,165 @@ def deduplicate_and_filter_photos(
 
 
 # ── 10x10 Inch Page Templates & Slot Geometries ──────────────────────────────
-PAGE_TEMPLATES: dict[PageTemplateId, list[tuple[float, float, float, float]]] = {
-    "cover_hero": [
-        (1.1, 1.65, 7.8, 5.85),
-    ],
-    "single_full_square": [
-        (0.95, 1.60, 8.1, 6.15),
-    ],
-    "single_editorial": [
-        (2.15, 1.60, 5.7, 6.15),
-    ],
-    "single_panoramic": [
-        (0.80, 2.15, 8.4, 5.25),
-    ],
-    "two_side_by_side": [
-        (0.75, 1.65, 4.1, 6.05),
-        (5.15, 1.65, 4.1, 6.05),
-    ],
-    "two_stacked_horizontal": [
-        (1.05, 1.60, 7.9, 2.70),
-        (1.05, 5.05, 7.9, 2.70),
-    ],
-    "two_asymmetric": [
-        (0.75, 1.65, 5.05, 6.05),
-        (6.05, 2.15, 3.20, 5.00),
-    ],
-    "three_hero_left": [
-        (0.75, 1.60, 4.50, 6.15),
-        (5.55, 1.60, 3.70, 2.70),
-        (5.55, 5.05, 3.70, 2.70),
-    ],
-    "three_hero_top": [
-        (0.85, 1.60, 8.30, 2.75),
-        (0.85, 5.10, 3.95, 2.65),
-        (5.20, 5.10, 3.95, 2.65),
-    ],
-    "three_columns": [
-        (0.65, 1.70, 2.75, 5.95),
-        (3.625, 1.70, 2.75, 5.95),
-        (6.60, 1.70, 2.75, 5.95),
-    ],
+PAGE_TEMPLATES_BY_FILL: dict[str, dict[PageTemplateId, list[tuple[float, float, float, float]]]] = {
+    "low": {
+        "cover_hero": [
+            (1.10, 1.65, 7.80, 5.85),
+        ],
+        "single_full_square": [
+            (0.95, 1.60, 8.10, 6.15),
+        ],
+        "single_editorial": [
+            (2.15, 1.60, 5.70, 6.15),
+        ],
+        "single_panoramic": [
+            (0.80, 2.15, 8.40, 5.25),
+        ],
+        "two_side_by_side": [
+            (0.75, 1.65, 4.10, 6.05),
+            (5.15, 1.65, 4.10, 6.05),
+        ],
+        "two_stacked_horizontal": [
+            (1.05, 1.60, 7.90, 2.70),
+            (1.05, 5.05, 7.90, 2.70),
+        ],
+        "two_asymmetric": [
+            (0.75, 1.65, 5.05, 6.05),
+            (6.05, 2.15, 3.20, 5.00),
+        ],
+        "three_hero_left": [
+            (0.75, 1.60, 4.50, 6.15),
+            (5.55, 1.60, 3.70, 2.70),
+            (5.55, 5.05, 3.70, 2.70),
+        ],
+        "three_hero_top": [
+            (0.85, 1.60, 8.30, 2.75),
+            (0.85, 5.10, 3.95, 2.65),
+            (5.20, 5.10, 3.95, 2.65),
+        ],
+        "three_columns": [
+            (0.65, 1.70, 2.75, 5.95),
+            (3.625, 1.70, 2.75, 5.95),
+            (6.60, 1.70, 2.75, 5.95),
+        ],
+    },
+    "medium": {
+        "cover_hero": [
+            (0.75, 1.40, 8.50, 6.40),
+        ],
+        "single_full_square": [
+            (0.65, 1.35, 8.70, 6.85),
+        ],
+        "single_editorial": [
+            (1.65, 1.35, 6.70, 6.85),
+        ],
+        "single_panoramic": [
+            (0.55, 1.85, 8.90, 5.85),
+        ],
+        "two_side_by_side": [
+            (0.55, 1.35, 4.30, 6.85),
+            (5.15, 1.35, 4.30, 6.85),
+        ],
+        "two_stacked_horizontal": [
+            (0.55, 1.35, 8.90, 3.25),
+            (0.55, 4.95, 8.90, 3.25),
+        ],
+        "two_asymmetric": [
+            (0.50, 1.35, 5.35, 6.85),
+            (6.15, 1.85, 3.35, 5.85),
+        ],
+        "three_hero_left": [
+            (0.50, 1.35, 4.90, 6.85),
+            (5.65, 1.35, 3.80, 3.25),
+            (5.65, 4.95, 3.80, 3.25),
+        ],
+        "three_hero_top": [
+            (0.55, 1.35, 8.90, 3.25),
+            (0.55, 4.95, 4.30, 3.25),
+            (5.15, 4.95, 4.30, 3.25),
+        ],
+        "three_columns": [
+            (0.45, 1.35, 2.90, 6.85),
+            (3.55, 1.35, 2.90, 6.85),
+            (6.65, 1.35, 2.90, 6.85),
+        ],
+    },
+    "high": {
+        "cover_hero": [
+            (0.45, 1.15, 9.10, 7.00),
+        ],
+        "single_full_square": [
+            (0.40, 1.10, 9.20, 7.50),
+        ],
+        "single_editorial": [
+            (1.20, 1.10, 7.60, 7.50),
+        ],
+        "single_panoramic": [
+            (0.35, 1.60, 9.30, 6.50),
+        ],
+        "two_side_by_side": [
+            (0.35, 1.10, 4.50, 7.50),
+            (5.15, 1.10, 4.50, 7.50),
+        ],
+        "two_stacked_horizontal": [
+            (0.35, 1.10, 9.30, 3.60),
+            (0.35, 5.00, 9.30, 3.60),
+        ],
+        "two_asymmetric": [
+            (0.35, 1.10, 5.65, 7.50),
+            (6.30, 1.60, 3.35, 6.50),
+        ],
+        "three_hero_left": [
+            (0.35, 1.10, 5.25, 7.50),
+            (5.85, 1.10, 3.80, 3.60),
+            (5.85, 5.00, 3.80, 3.60),
+        ],
+        "three_hero_top": [
+            (0.35, 1.10, 9.30, 3.60),
+            (0.35, 5.00, 4.50, 3.60),
+            (5.15, 5.00, 4.50, 3.60),
+        ],
+        "three_columns": [
+            (0.35, 1.10, 2.95, 7.50),
+            (3.52, 1.10, 2.95, 7.50),
+            (6.70, 1.10, 2.95, 7.50),
+        ],
+    },
 }
 
+PAGE_TEMPLATES: dict[PageTemplateId, list[tuple[float, float, float, float]]] = PAGE_TEMPLATES_BY_FILL["high"]
 
-def _can_page_preserve_all_faces(page_photos: list[PhotoMetadata], tpl: PageTemplateId) -> bool:
-    geoms = PAGE_TEMPLATES[tpl]
+
+def get_page_templates(fill_mode: str = "high") -> dict[PageTemplateId, list[tuple[float, float, float, float]]]:
+    """Retrieve slot geometry tuples (x_in, y_in, w_in, h_in) for the requested page fill mode."""
+    clean = (fill_mode or "high").lower().strip()
+    return PAGE_TEMPLATES_BY_FILL.get(clean, PAGE_TEMPLATES_BY_FILL["high"])
+
+
+def _can_page_preserve_all_faces(
+    page_photos: list[PhotoMetadata],
+    tpl: PageTemplateId,
+    fill_mode: str = "high",
+    crop_focus: str = "tight",
+) -> bool:
+    geoms = get_page_templates(fill_mode)[tpl]
     for photo, (_, _, w_in, h_in) in zip(page_photos, geoms):
         if not can_fit_aspect_without_cutting_faces(
             photo.analysis_width,
             photo.analysis_height,
             w_in / h_in,
             photo.analysis.faces_boxes,
+            crop_focus=crop_focus,
         ):
             return False
     return True
 
 
-def choose_best_page_template(page_photos: list[PhotoMetadata]) -> PageTemplateId:
+def choose_best_page_template(
+    page_photos: list[PhotoMetadata],
+    fill_mode: str = "high",
+    crop_focus: str = "tight",
+) -> PageTemplateId:
     """Pick the most aesthetic 1-, 2-, or 3-photo template on a 10x10 inch page
     that preserves 100% of all detected faces without cutting any face off."""
     n = len(page_photos)
@@ -1240,7 +1342,7 @@ def choose_best_page_template(page_photos: list[PhotoMetadata]) -> PageTemplateI
             candidates = ["three_hero_left", "three_hero_top", "three_columns"]
 
     for tpl in candidates:
-        if _can_page_preserve_all_faces(page_photos, tpl):
+        if _can_page_preserve_all_faces(page_photos, tpl, fill_mode=fill_mode, crop_focus=crop_focus):
             return tpl
 
     return candidates[0]
@@ -1334,7 +1436,11 @@ def select_hero_cover_photo(selected_photos: list[PhotoMetadata]) -> PhotoMetada
     )
 
 
-def _default_clusters_and_pages(selected_photos: list[PhotoMetadata]) -> _BookCurationPlan:
+def _default_clusters_and_pages(
+    selected_photos: list[PhotoMetadata],
+    fill_mode: str = "high",
+    crop_focus: str = "tight",
+) -> _BookCurationPlan:
     """Chronological clustering and 1-to-3 photo page grouping from the photo analyses."""
     by_day: dict[str, list[PhotoMetadata]] = defaultdict(list)
     for p in selected_photos:
@@ -1389,8 +1495,8 @@ def _default_clusters_and_pages(selected_photos: list[PhotoMetadata]) -> _BookCu
 
             batch = c_photos[idx : idx + take]
             while len(batch) > 1:
-                tpl_check = choose_best_page_template(batch)
-                if _can_page_preserve_all_faces(batch, tpl_check):
+                tpl_check = choose_best_page_template(batch, fill_mode=fill_mode, crop_focus=crop_focus)
+                if _can_page_preserve_all_faces(batch, tpl_check, fill_mode=fill_mode, crop_focus=crop_focus):
                     break
                 take -= 1
                 batch = c_photos[idx : idx + take]
@@ -1428,6 +1534,8 @@ def curate_clusters_and_pages(
     hero_model: str = "gemini-3.8-flash",
     layout_model: str = "local_geometric",
     batch_size: int = 6,
+    page_fill_mode: str = "high",
+    crop_focus: str = "tight",
     api_key: Optional[str] = None,
 ) -> tuple[str, str, str, list[PhotoCluster], list[BookPage]]:
     """Cluster surviving chronological photos into thematic events, select the Hero cover image,
@@ -1470,7 +1578,7 @@ def curate_clusters_and_pages(
                 pass
 
     # Build deterministic face-safe chronological clusters & pages first (<5ms)
-    plan = _default_clusters_and_pages(selected_photos)
+    plan = _default_clusters_and_pages(selected_photos, fill_mode=page_fill_mode, crop_focus=crop_focus)
 
     # Stage 2: Fast Curation & Chapter Captioning model (e.g. gemini-2.5-flash-lite with 0 thinking budget)
     if effective_key and curation_model and curation_model != "local_fast":
@@ -1579,14 +1687,17 @@ def curate_clusters_and_pages(
     pages: list[BookPage] = []
     crop_tasks: list[tuple[str, tuple[int, int, int, int], Path, int, int]] = []
 
+    templates = get_page_templates(page_fill_mode)
+
     hero = photo_map[plan.hero_cover_photo_id]
-    cx_in, cy_in, cw_in, ch_in = PAGE_TEMPLATES["cover_hero"][0]
+    cx_in, cy_in, cw_in, ch_in = templates["cover_hero"][0]
     c_crop_px, c_crop_norm, c_faces_ok = compute_aesthetic_crop(
         width=hero.analysis_width,
         height=hero.analysis_height,
         target_aspect=cw_in / ch_in,
         faces_boxes=hero.analysis.faces_boxes,
         salient_box=hero.analysis.salient_subject_box,
+        crop_focus=crop_focus,
     )
     cover_crop_name = f"page_00_cover_{hero.photo_id}.jpg"
     crop_tasks.append(
@@ -1636,8 +1747,8 @@ def curate_clusters_and_pages(
             page_photos = [photo_map[pid] for pid in chunk_pids]
             page_photos.sort(key=lambda p: (p.captured_timestamp, p.filename))
 
-            tpl_id = choose_best_page_template(page_photos)
-            geoms = PAGE_TEMPLATES[tpl_id]
+            tpl_id = choose_best_page_template(page_photos, fill_mode=page_fill_mode, crop_focus=crop_focus)
+            geoms = templates[tpl_id]
 
             cid = pg_plan.cluster_id or page_photos[0].cluster_id or clusters[0].cluster_id
             cluster_obj = cluster_map.get(cid, clusters[0])
@@ -1652,6 +1763,7 @@ def curate_clusters_and_pages(
                     target_aspect=w_in / h_in,
                     faces_boxes=p.analysis.faces_boxes,
                     salient_box=p.analysis.salient_subject_box,
+                    crop_focus=crop_focus,
                 )
                 crop_filename = f"page_{page_num:03d}_slot_{s_idx + 1}_{p.photo_id}.jpg"
                 crop_tasks.append(

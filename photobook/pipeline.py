@@ -36,6 +36,8 @@ def build_photo_book(
     min_analysis_px: int = MIN_ANALYSIS_PX,
     max_analysis_px: int = MAX_ANALYSIS_PX,
     max_book_photos: int = 90,
+    page_fill_mode: str = "high",
+    crop_focus: str = "tight",
     api_key: Optional[str] = None,
     progress_cb: Optional[Callable[[str, int, int], None]] = None,
 ) -> PhotoBookResult:
@@ -147,6 +149,8 @@ def build_photo_book(
         hero_model=hero_model,
         layout_model=layout_model,
         batch_size=batch_size,
+        page_fill_mode=page_fill_mode,
+        crop_focus=crop_focus,
         api_key=api_key,
     )
     stage_timings["curation_layout_s"] = round(time.perf_counter() - t4, 2)
@@ -175,6 +179,8 @@ def build_photo_book(
         media_resolution=media_resolution,
         analysis_pixel_range=f"{min_analysis_px:,} to {max_analysis_px:,} px",
         book_size_inches=(10.0, 10.0),
+        page_fill_mode=page_fill_mode,
+        crop_focus=crop_focus,
         hero_cover_photo_id=hero_id,
         total_scanned=len(photos),
         total_selected=len(selected),

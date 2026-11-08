@@ -204,7 +204,7 @@ def save_analysis_files(result: PhotoBookResult) -> tuple[Path, Path]:
     if result.model_note:
         lines.append(f"- **Model Note:** {result.model_note}")
     lines += [
-        f"- **Book Dimensions:** `10.0 × 10.0 inches`",
+        f"- **Book Dimensions:** `10.0 × 10.0 inches` (Page Fill: `{result.page_fill_mode}`, Crop Focus: `{result.crop_focus}`)",
         f"- **Hero Cover Photo:** `{result.hero_cover_photo_id}`",
         f"- **Summary Counts:** {result.total_scanned} scanned → **{result.total_selected} selected**, "
         f"{result.total_excluded_duplicates} duplicates removed, {result.total_excluded_similar} similar burst shots removed, "
