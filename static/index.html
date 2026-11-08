@@ -1374,12 +1374,42 @@
     liveCuratorPanel.style.display = 'block';
 
     for (const p of photoList) {
-      const existingIdx = liveDiscoveredPhotos.findIndex(item => item.photo_id === p.photo_id);
+      // Robust multi-key deduplication: match by filename, analysis_path, or photo_id
+      const existingIdx = liveDiscoveredPhotos.findIndex(item =>
+        (item.filename && p.filename && item.filename === p.filename) ||
+        (item.analysis_path && p.analysis_path && item.analysis_path === p.analysis_path) ||
+        (item.photo_id && p.photo_id && item.photo_id === p.photo_id)
+      );
+
       if (existingIdx >= 0) {
-        liveDiscoveredPhotos[existingIdx] = Object.assign(liveDiscoveredPhotos[existingIdx], p);
-        if (p.caption) spotlightQueue.push(liveDiscoveredPhotos[existingIdx]);
+        const prev = liveDiscoveredPhotos[existingIdx];
+        const wasAnalyzed = !!prev.caption;
+        liveDiscoveredPhotos[existingIdx] = Object.assign(prev, p);
+        if (p.caption) {
+          spotlightQueue.push(liveDiscoveredPhotos[existingIdx]);
+          if (!wasAnalyzed) {
+            if (p.location_or_landmark) {
+              knownLandmarks.add(p.location_or_landmark);
+            }
+            if (p.faces_count && p.faces_count > 0) {
+              totalPortraitsCount += p.faces_count;
+            }
+            if (p.quality_score) {
+              runningScoreSum += p.quality_score;
+              runningScoreCount += 1;
+            }
+          }
+        }
+        // Update existing filmstrip thumbnail data
+        const existingThumb = curatorFilmstrip.querySelector(`[data-filename="${CSS.escape(p.filename)}"]`) ||
+                              curatorFilmstrip.querySelector(`[data-id="${CSS.escape(p.photo_id)}"]`);
+        if (existingThumb) {
+          existingThumb.dataset.id = p.photo_id;
+          if (p.caption) existingThumb.title = p.caption;
+        }
         continue;
       }
+
       liveDiscoveredPhotos.push(p);
       if (p.caption) {
         spotlightQueue.push(p);
@@ -1402,6 +1432,7 @@
       const thumb = document.createElement('img');
       thumb.className = 'filmstrip-thumb';
       thumb.dataset.id = p.photo_id;
+      thumb.dataset.filename = p.filename || '';
       thumb.src = getPhotoPreviewUrl(p);
       thumb.alt = p.filename || p.photo_id;
       thumb.title = p.caption || p.filename || 'Photo';
@@ -1415,14 +1446,21 @@
       curatorFilmstrip.removeChild(curatorFilmstrip.firstChild);
     }
 
-    // Update chips
-    curatorAnalyzedCount.innerHTML = `<b>${liveDiscoveredPhotos.length}</b> Photos Explored`;
+    // Update chips cleanly with exact unique photo counts
+    const analyzedCount = liveDiscoveredPhotos.filter(p => !!p.caption).length;
+    const totalCount = liveDiscoveredPhotos.length;
+    if (analyzedCount > 0) {
+      curatorAnalyzedCount.innerHTML = `<b>${analyzedCount} / ${totalCount}</b> Photos Explored`;
+    } else {
+      curatorAnalyzedCount.innerHTML = `<b>${totalCount}</b> Photos Scanned`;
+    }
+
     curatorLandmarksCount.innerHTML = `<b>${knownLandmarks.size}</b> Landmarks Discovered`;
     if (runningScoreCount > 0) {
       curatorAvgScore.innerHTML = `<b>${(runningScoreSum / runningScoreCount).toFixed(1)}/10</b> Avg Quality`;
     }
     curatorPortraitsCount.innerHTML = `<b>${totalPortraitsCount}</b> Portraits Safe`;
-    filmstripCounter.textContent = `${liveDiscoveredPhotos.length} photos`;
+    filmstripCounter.textContent = `${totalCount} photos${analyzedCount > 0 ? ` (${analyzedCount} analyzed)` : ''}`;
 
     // Trigger initial spotlight if empty
     if (!currentSpotlightPhotoId && liveDiscoveredPhotos.length > 0) {
