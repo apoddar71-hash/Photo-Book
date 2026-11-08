@@ -141,7 +141,7 @@ def build_photo_book(
         )
 
     t4 = time.perf_counter()
-    title, subtitle, hero_id, clusters, pages = curate_clusters_and_pages(
+    title, subtitle, hero_id, clusters, pages, book_location = curate_clusters_and_pages(
         selected_photos=selected,
         work_dir=book_dir,
         model=model_used,
@@ -183,6 +183,7 @@ def build_photo_book(
         page_fill_mode=page_fill_mode,
         crop_focus=crop_focus,
         include_captions=include_captions,
+        location=book_location,
         hero_cover_photo_id=hero_id,
         total_scanned=len(photos),
         total_selected=len(selected),

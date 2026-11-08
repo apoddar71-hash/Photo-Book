@@ -607,3 +607,59 @@ def test_include_captions_toggle_in_pipeline_and_renderers(tmp_path: Path) -> No
     pdf_caps = Path(res_caps.pdf_path).read_bytes()
     assert pdf_caps.startswith(b"%PDF-")
 
+
+def test_remove_curated_and_dates_and_include_location_on_cover(tmp_path: Path) -> None:
+    """Verify that 'CURATED 10x10' and dates are removed from pages, and location is displayed on cover."""
+    test_folder = _create_raw_photos_test_folder(tmp_path / "raw_photos")
+    out_root = tmp_path / "out_loc"
+
+    result = build_photo_book(
+        folder_path=test_folder,
+        output_root=out_root,
+    )
+
+    html_text = Path(result.html_preview_path).read_text(encoding="utf-8")
+
+    # 1. Ensure "CURATED 10×10 INCH PHOTO BOOK" and "A Curated 10x10" are nowhere in the HTML
+    assert "CURATED 10×10 INCH PHOTO BOOK" not in html_text
+    assert "A Curated 10×10 Photo Book" not in html_text
+    assert "A Curated 10x10 Photo Book" not in html_text
+
+    # 2. Ensure date range string is not in chapter headers
+    for p in result.pages:
+        if p.chapter_title:
+            assert "(" not in p.chapter_title or "2024" not in p.chapter_title
+
+    # 3. Test strip_curated_and_dates helper
+    from photobook.analyzer import strip_curated_and_dates
+    assert strip_curated_and_dates("A Curated 10×10 Photo Book • 2024-04-12 to 2024-04-15") == ""
+    assert strip_curated_and_dates("Day 1 (2024-04-12) — Tokyo Tower") == "Day 1 — Tokyo Tower"
+    assert strip_curated_and_dates("Captured Moments (2024-04-12 to 2024-04-15)") == "Captured Moments"
+
+    # 4. Test location detection on cover
+    from photobook.models import GeminiPhotoAnalysis, PhotoMetadata
+    p1 = PhotoMetadata(
+        photo_id="test_loc",
+        filename="test.jpg",
+        file_path="/tmp/test.jpg",
+        original_width=1600,
+        original_height=1200,
+        analysis_width=1600,
+        analysis_height=1200,
+        analysis_path="/tmp/test.jpg",
+        captured_at="2026-08-10T14:30:00",
+        captured_timestamp=1700010000.0,
+        dhash="aaaaaaaa00000000",
+        ahash="aaaaaaaa00000000",
+        color_signature=[0.57735, 0.57735, 0.57735],
+        analysis=GeminiPhotoAnalysis(
+            location_or_landmark="Old San Juan, Puerto Rico",
+            cover_worthiness_score=9.5,
+            aesthetic_score=9.5,
+        ),
+    )
+    from photobook.analyzer import extract_book_location
+    detected_loc = extract_book_location([p1], hero_photo=p1)
+    assert detected_loc == "Old San Juan, Puerto Rico"
+
+

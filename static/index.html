@@ -1038,6 +1038,7 @@
       <div class="stat-pill"><b>Fill:</b> ${escapeHtml(book.page_fill_mode || 'high')}</div>
       <div class="stat-pill"><b>Crop:</b> ${escapeHtml(book.crop_focus || 'tight')}</div>
       <div class="stat-pill"><b>Captions:</b> ${book.include_captions !== false ? 'Yes' : 'No'}</div>
+      ${book.location ? `<div class="stat-pill" style="border-color:var(--gold);"><b>Location:</b> ${escapeHtml(book.location)}</div>` : ''}
       <div class="stat-pill"><b>${book.hero_cover_photo_id}</b> Hero Cover</div>
     `;
 
@@ -1094,15 +1095,40 @@
     return spreads;
   }
 
+  function stripCuratedAndDates(text) {
+    if (!text) return '';
+    return text
+      .replace(/\bA\s+Curated\s+10[x×]10\s+(?:Inch\s+)?Photo\s+Book\s*[•\-–—]?\s*/gi, '')
+      .replace(/\bCurated\s+10[x×]10\s+(?:Inch\s+)?Photo\s+Book\s*[•\-–—]?\s*/gi, '')
+      .replace(/\bCurated\s+10[x×]10\s*(?:Inch)?\s*[•\-–—]?\s*/gi, '')
+      .replace(/\b10[x×]10\s+(?:Inch\s+)?Photo\s+Book\s*[•\-–—]?\s*/gi, '')
+      .replace(/\(\d{4}[-/]\d{2}[-/]\d{2}\)/g, '')
+      .replace(/\b\d{4}[-/]\d{2}[-/]\d{2}\s*(to|–|-|—)\s*\d{4}[-/]\d{2}[-/]\d{2}\b/g, '')
+      .replace(/\b\d{4}[-/]\d{2}[-/]\d{2}\b/g, '')
+      .replace(/\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}\b/gi, '')
+      .replace(/\s*[•\-–—]\s*$/g, '')
+      .replace(/^\s*[•\-–—]\s*/g, '')
+      .replace(/\(\s*\)/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+
   function renderSinglePageLeaf(pg, leafSideClass, baseUrl, overlayClass) {
     if (!pg) return '';
+    const locText = (currentBook.location || '').trim();
     if (pg.page_type === 'endpaper_front') {
+      const cleanEndTitle = stripCuratedAndDates(currentBook.title);
+      const cleanEndSub = stripCuratedAndDates(currentBook.subtitle);
+      let endSubDisplay = locText ? `📍 ${locText}` : cleanEndSub;
+      if (locText && cleanEndSub && !cleanEndSub.toLowerCase().includes(locText.toLowerCase())) {
+        endSubDisplay = `📍 ${locText} • ${cleanEndSub}`;
+      }
       return `
         <div class="square-page endpaper ${leafSideClass}">
           <div class="page-trim-border"></div>
-          <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#9b8e78;margin-bottom:8px;">10×10 INCH LAY-FLAT HARDCOVER EDITION</div>
-          <div style="font-size:18px;color:#4a4338;font-weight:700;text-align:center;padding:0 12%;">${escapeHtml(currentBook.title)}</div>
-          <div style="font-size:12px;color:#827766;margin-top:6px;">${escapeHtml(currentBook.subtitle)}</div>
+          <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#9b8e78;margin-bottom:8px;">LAY-FLAT HARDCOVER EDITION</div>
+          <div style="font-size:18px;color:#4a4338;font-weight:700;text-align:center;padding:0 12%;">${escapeHtml(cleanEndTitle)}</div>
+          ${endSubDisplay ? `<div style="font-size:12px;color:#827766;margin-top:6px;">${escapeHtml(endSubDisplay)}</div>` : ''}
         </div>
       `;
     }
@@ -1111,27 +1137,38 @@
         <div class="square-page endpaper ${leafSideClass}">
           <div class="page-trim-border"></div>
           <div style="font-size:13px;color:#7c7262;">— Finis —</div>
-          <div style="font-size:11px;color:#9b8e78;margin-top:4px;">${currentBook.total_selected} Curated Moments</div>
+          <div style="font-size:11px;color:#9b8e78;margin-top:4px;">${currentBook.total_selected} Selected Moments</div>
         </div>
       `;
     }
     const showCaps = currentBook.include_captions !== false;
     if (pg.page_type === 'cover') {
       const s = pg.slots[0];
+      const cleanTitle = stripCuratedAndDates(pg.chapter_title || currentBook.title);
+      const rawSub = (showCaps ? pg.group_caption : null) || currentBook.subtitle;
+      let cleanSub = stripCuratedAndDates(rawSub);
+      let coverSubDisplay = '';
+      if (!cleanSub && locText) {
+        coverSubDisplay = `📍 ${locText}`;
+      } else if (locText && !cleanSub.toLowerCase().includes(locText.toLowerCase())) {
+        coverSubDisplay = `📍 ${locText} • ${cleanSub}`;
+      } else {
+        coverSubDisplay = cleanSub ? (locText ? `📍 ${cleanSub}` : cleanSub) : '';
+      }
       return `
         <div class="square-page cover ${leafSideClass} ${overlayClass}">
           <div class="page-trim-border"></div>
           <div class="page-header-box centered">
-            <div class="page-eyebrow">CURATED 10×10 INCH PHOTO BOOK</div>
-            <h3 class="page-title-h">${escapeHtml(pg.chapter_title || currentBook.title)}</h3>
+            ${locText ? `<div class="page-eyebrow">${escapeHtml(locText.toUpperCase())}</div>` : ''}
+            <h3 class="page-title-h">${escapeHtml(cleanTitle)}</h3>
           </div>
           <div class="slot-box" style="left:${s.x_in*10}%;top:${s.y_in*10}%;width:${s.width_in*10}%;height:${s.height_in*10}%;">
             <img src="${baseUrl}/${s.cropped_image_relpath}" alt="${escapeHtml(s.filename)}" />
             <div class="slot-badge">HERO COVER • ${escapeHtml(s.filename)} • Faces: ${s.faces_count} (100% preserved)</div>
           </div>
           <div class="page-footer-box">
-            ${showCaps && s.caption ? `<p class="page-caption-text">${escapeHtml(s.caption)}</p>` : ''}
-            <div style="font-size:11px;color:var(--gold);letter-spacing:0.06em;">${escapeHtml(showCaps ? (pg.group_caption || currentBook.subtitle) : currentBook.subtitle)}</div>
+            ${showCaps && s.caption ? `<p class="page-caption-text">${escapeHtml(stripCuratedAndDates(s.caption))}</p>` : ''}
+            ${coverSubDisplay ? `<div style="font-size:11px;color:var(--gold);letter-spacing:0.06em;">${escapeHtml(coverSubDisplay)}</div>` : ''}
           </div>
         </div>
       `;
@@ -1141,18 +1178,20 @@
       <div class="slot-box" style="left:${s.x_in*10}%;top:${s.y_in*10}%;width:${s.width_in*10}%;height:${s.height_in*10}%;">
         <img src="${baseUrl}/${s.cropped_image_relpath}" alt="${escapeHtml(s.filename)}" />
         <div class="slot-badge">Slot ${idx + 1} (${s.width_in}×${s.height_in}in) • Faces: ${s.faces_count} (${s.faces_preserved ? 'Safe' : 'Adjusted'})</div>
-        ${showCaps && pg.slots.length > 1 && s.caption ? `<div class="slot-individual-cap">${escapeHtml(s.caption)}</div>` : ''}
+        ${showCaps && pg.slots.length > 1 && s.caption ? `<div class="slot-individual-cap">${escapeHtml(stripCuratedAndDates(s.caption))}</div>` : ''}
       </div>
     `).join('');
 
-    const headerHtml = pg.chapter_title
+    const cleanChapter = stripCuratedAndDates(pg.chapter_title);
+    const headerHtml = cleanChapter
       ? `<div class="page-header-box" style="border-bottom:1px solid #d4c7b0;padding-bottom:3px;">
            <div class="page-eyebrow">CHAPTER</div>
-           <h3 class="page-title-h">${escapeHtml(pg.chapter_title)}</h3>
+           <h3 class="page-title-h">${escapeHtml(cleanChapter)}</h3>
          </div>`
       : '';
 
-    const footerCap = showCaps ? (pg.group_caption || (pg.slots[0] ? pg.slots[0].caption : '')) : '';
+    const rawFooter = showCaps ? (pg.group_caption || (pg.slots[0] ? pg.slots[0].caption : '')) : '';
+    const footerCap = stripCuratedAndDates(rawFooter);
     const footerCapHtml = footerCap ? `<p class="page-caption-text" style="font-size:11px;">${escapeHtml(footerCap)}</p>` : '';
     const pageNumPos = leafSideClass === 'left-leaf' ? 'left: 0; right: auto;' : 'right: 0; left: auto;';
     return `

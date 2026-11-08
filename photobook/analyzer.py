@@ -79,6 +79,58 @@ def clamp_caption_two_lines(text: str, max_chars: int = 145) -> str:
     return clipped + "…"
 
 
+def strip_curated_and_dates(text: Optional[str]) -> str:
+    """Remove 'A Curated 10x10 Photo Book', 'Curated 10x10', and date ranges/patterns from text."""
+    if not text:
+        return ""
+    cleaned = text
+    # Remove phrases like 'A Curated 10x10 Photo Book •', 'Curated 10x10 Photo Book', etc.
+    cleaned = re.sub(r"(?i)\bA\s+Curated\s+10[x×]10\s+(?:Inch\s+)?Photo\s+Book\s*[•\-–—]?\s*", "", cleaned)
+    cleaned = re.sub(r"(?i)\bCurated\s+10[x×]10\s+(?:Inch\s+)?Photo\s+Book\s*[•\-–—]?\s*", "", cleaned)
+    cleaned = re.sub(r"(?i)\bCurated\s+10[x×]10\s*(?:Inch)?\s*[•\-–—]?\s*", "", cleaned)
+    cleaned = re.sub(r"(?i)\b10[x×]10\s+(?:Inch\s+)?Photo\s+Book\s*[•\-–—]?\s*", "", cleaned)
+    # Remove ISO dates: 2024-04-12 to 2024-04-15 or (2024-04-12) or 2024-04-12
+    cleaned = re.sub(r"\(\d{4}[-/]\d{2}[-/]\d{2}\)", "", cleaned)
+    cleaned = re.sub(r"\b\d{4}[-/]\d{2}[-/]\d{2}\s*(to|–|-|—)\s*\d{4}[-/]\d{2}[-/]\d{2}\b", "", cleaned)
+    cleaned = re.sub(r"\b\d{4}[-/]\d{2}[-/]\d{2}\b", "", cleaned)
+    # Remove month/day dates: e.g. (October 14, 2024) or Oct 14, 2024
+    cleaned = re.sub(
+        r"\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}\b",
+        "",
+        cleaned,
+    )
+    # Clean up leftover leading/trailing punctuation or extra spaces
+    cleaned = re.sub(r"\s*[•\-–—]\s*$", "", cleaned)
+    cleaned = re.sub(r"^\s*[•\-–—]\s*", "", cleaned)
+    cleaned = re.sub(r"\(\s*\)", "", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+    return cleaned
+
+
+def extract_book_location(
+    photos: list[PhotoMetadata],
+    hero_photo: Optional[PhotoMetadata] = None,
+) -> Optional[str]:
+    """Extract the primary geographic location or landmark for the photo book cover from Gemini analysis."""
+    # 1. Check hero photo landmark/location first
+    if hero_photo and hero_photo.analysis and hero_photo.analysis.location_or_landmark:
+        loc = hero_photo.analysis.location_or_landmark.strip()
+        if loc and loc.lower() not in ("n/a", "none", "unknown", ""):
+            return loc
+
+    # 2. Check frequency of landmarks across all selected photos
+    loc_counts: Counter[str] = Counter()
+    for p in photos:
+        loc = (p.analysis.location_or_landmark or "").strip()
+        if loc and loc.lower() not in ("n/a", "none", "unknown", ""):
+            loc_counts[loc] += 1
+
+    if loc_counts:
+        return loc_counts.most_common(1)[0][0]
+
+    return None
+
+
 class _CurationClusterPlan(BaseModel):
     cluster_id: str = Field(description="Unique cluster ID, e.g. 'cluster_01'")
     title: str = Field(description="Chapter/group title derived from the photos' locations and activities")
@@ -102,7 +154,8 @@ class _CurationPagePlan(BaseModel):
 
 class _BookCurationPlan(BaseModel):
     book_title: str = Field(description="Evocative title for the 10x10 photo book cover")
-    book_subtitle: str = Field(description="Short subtitle (e.g. date range or destination summary)")
+    book_subtitle: str = Field(description="Short subtitle or location summary")
+    location: Optional[str] = Field(default=None, description="Primary recognized geographic location or landmark")
     hero_cover_photo_id: str = Field(description="photo_id of the single best hero photo for the front cover")
     clusters: list[_CurationClusterPlan] = Field(description="Chronological thematic clusters of the selected photos")
     pages: list[_CurationPagePlan] = Field(description="Page-by-page grouping (1, 2, or 3 photos max per page)")
@@ -1348,18 +1401,19 @@ def choose_best_page_template(
     return candidates[0]
 
 
-def _synthesize_group_caption(photos_in_group: list[PhotoMetadata], chapter_title: str, day_str: str) -> str:
+def _synthesize_group_caption(photos_in_group: list[PhotoMetadata], chapter_title: str, day_str: str = "") -> str:
     """Create a natural 1-2 line caption for a cluster or multi-photo page."""
     if not photos_in_group:
-        return f"Memorable moments from {chapter_title} ({day_str})."
+        clean_chap = strip_curated_and_dates(chapter_title)
+        return f"Memorable moments from {clean_chap}."
     if len(photos_in_group) == 1:
-        return clamp_caption_two_lines(photos_in_group[0].analysis.caption)
+        return clamp_caption_two_lines(strip_curated_and_dates(photos_in_group[0].analysis.caption))
 
     best = max(photos_in_group, key=lambda p: p.analysis.composite_score)
-    base_cap = best.analysis.caption.rstrip(".")
+    base_cap = strip_curated_and_dates(best.analysis.caption).rstrip(".")
     themes = []
     for p in photos_in_group:
-        t = (p.analysis.event_theme or "").strip()
+        t = strip_curated_and_dates((p.analysis.event_theme or "").strip())
         if t and t.lower() not in base_cap.lower() and t not in themes:
             themes.append(t)
 
@@ -1367,7 +1421,7 @@ def _synthesize_group_caption(photos_in_group: list[PhotoMetadata], chapter_titl
         combined = f"{base_cap} — {themes[0]}."
         if len(combined) <= 140:
             return combined
-    return clamp_caption_two_lines(best.analysis.caption)
+    return clamp_caption_two_lines(base_cap)
 
 
 def select_hero_cover_photo(selected_photos: list[PhotoMetadata]) -> PhotoMetadata:
@@ -1456,12 +1510,20 @@ def _default_clusters_and_pages(
             if p.analysis.location_or_landmark and p.analysis.location_or_landmark not in ("N/A", ""):
                 landmark_counts[p.analysis.location_or_landmark] += 1
 
+        top_landmarks = [l for l, _ in landmark_counts.most_common(2)]
         top_themes = [t for t, _ in theme_counts.most_common(2)]
-        title_body = " & ".join(top_themes) if top_themes else f"Highlights of {day_str}"
-        chapter_title = f"Day {day_idx} ({day_str}) — {title_body}" if len(by_day) > 1 else title_body
+        if top_landmarks and top_themes:
+            title_body = f"{top_landmarks[0]} & {top_themes[0]}"
+        elif top_landmarks:
+            title_body = " & ".join(top_landmarks)
+        elif top_themes:
+            title_body = " & ".join(top_themes)
+        else:
+            title_body = "Memories & Highlights"
+        chapter_title = f"Chapter {day_idx} — {title_body}" if len(by_day) > 1 else title_body
 
         cid = f"cluster_{len(clusters) + 1:02d}"
-        grp_cap = _synthesize_group_caption(day_photos, chapter_title, day_str)
+        grp_cap = _synthesize_group_caption(day_photos, chapter_title)
         clusters.append(
             _CurationClusterPlan(
                 cluster_id=cid,
@@ -1502,7 +1564,7 @@ def _default_clusters_and_pages(
                 batch = c_photos[idx : idx + take]
 
             idx += take
-            page_cap = _synthesize_group_caption(batch, cluster.title, cluster.date_range_label)
+            page_cap = _synthesize_group_caption(batch, cluster.title)
             pages.append(
                 _CurationPagePlan(
                     cluster_id=cluster.cluster_id,
@@ -1511,14 +1573,18 @@ def _default_clusters_and_pages(
                 )
             )
 
-    first_date = selected_photos[0].captured_at[:10]
-    last_date = selected_photos[-1].captured_at[:10]
-    date_subtitle = first_date if first_date == last_date else f"{first_date} to {last_date}"
-    book_title = clusters[0].title if len(clusters) == 1 else f"Captured Moments ({date_subtitle})"
+    primary_location = extract_book_location(selected_photos, hero_photo=hero_photo)
+    if primary_location:
+        book_title = f"Memories of {primary_location}" if len(clusters) > 1 else clusters[0].title
+        book_subtitle = primary_location
+    else:
+        book_title = clusters[0].title if len(clusters) == 1 else "Captured Moments"
+        book_subtitle = "A Visual Chronicle"
 
     return _BookCurationPlan(
-        book_title=book_title,
-        book_subtitle=f"A Curated 10×10 Photo Book • {date_subtitle}",
+        book_title=strip_curated_and_dates(book_title),
+        book_subtitle=strip_curated_and_dates(book_subtitle),
+        location=primary_location,
         hero_cover_photo_id=hero_photo.photo_id,
         clusters=clusters,
         pages=pages,
@@ -1537,7 +1603,7 @@ def curate_clusters_and_pages(
     page_fill_mode: str = "high",
     crop_focus: str = "tight",
     api_key: Optional[str] = None,
-) -> tuple[str, str, str, list[PhotoCluster], list[BookPage]]:
+) -> tuple[str, str, str, list[PhotoCluster], list[BookPage], Optional[str]]:
     """Cluster surviving chronological photos into thematic events, select the Hero cover image,
     and arrange 1, 2, or 3 photos max per 10x10 inch page with face-safe aesthetic cropping."""
     if not selected_photos:
@@ -1601,9 +1667,9 @@ def curate_clusters_and_pages(
                 )
             curation_prompt = (
                 "You are titling a 10x10 inch personal photo book and its chronological chapters.\n"
-                "Based ONLY on the actual landmarks, themes, and dates below, return:\n"
-                "1. A memorable `book_title` (under 55 chars).\n"
-                "2. For each cluster in `clusters`, a concise chapter `title` and a warm 1-2 line max `group_caption` (under 135 chars).\n\n"
+                "Based ONLY on the actual landmarks, locations, and themes below:\n"
+                "1. A memorable `book_title` (under 55 chars) highlighting the destination or story. Strictly do NOT include dates, years, or phrases like '10x10' or 'Curated'.\n"
+                "2. For each cluster in `clusters`, a concise chapter `title` (e.g., 'Chapter 1 — Historic Old Town') strictly WITHOUT dates or years, and a warm 1-2 line max `group_caption` (under 135 chars) strictly without dates.\n\n"
                 f"Clusters JSON:\n{json.dumps(cluster_inputs)}"
             )
             if curation_model.startswith("gemini-3.8"):
@@ -1634,15 +1700,15 @@ def curate_clusters_and_pages(
                 refinement = BookCurationRefinement.model_validate_json(resp.text)
 
             if refinement.book_title:
-                plan.book_title = refinement.book_title.strip()
+                plan.book_title = strip_curated_and_dates(refinement.book_title.strip())
             ref_by_id = {item.cluster_id: item for item in refinement.clusters}
             for c in plan.clusters:
                 if c.cluster_id in ref_by_id:
                     r_item = ref_by_id[c.cluster_id]
                     if r_item.title:
-                        c.title = r_item.title.strip()
+                        c.title = strip_curated_and_dates(r_item.title.strip())
                     if r_item.group_caption:
-                        c.group_caption = clamp_caption_two_lines(r_item.group_caption)
+                        c.group_caption = clamp_caption_two_lines(strip_curated_and_dates(r_item.group_caption))
         except Exception:
             pass
 
@@ -1794,15 +1860,16 @@ def curate_clusters_and_pages(
                 )
 
             group_cap = clamp_caption_two_lines(
-                pg_plan.group_caption or _synthesize_group_caption(page_photos, cluster_obj.title, cluster_obj.date_range_label)
+                strip_curated_and_dates(pg_plan.group_caption or _synthesize_group_caption(page_photos, cluster_obj.title))
             )
+            clean_chap_title = strip_curated_and_dates(cluster_obj.title) if is_first_page_of_cluster else None
             pages.append(
                 BookPage(
                     page_number=page_num,
                     page_type="photo_page",
                     template_id=tpl_id,
                     cluster_id=cluster_obj.cluster_id,
-                    chapter_title=cluster_obj.title if is_first_page_of_cluster else None,
+                    chapter_title=clean_chap_title,
                     group_caption=group_cap,
                     slots=slots,
                 )
@@ -1812,4 +1879,4 @@ def curate_clusters_and_pages(
     with ThreadPoolExecutor(max_workers=min(8, (os.cpu_count() or 4))) as executor:
         list(executor.map(lambda args: crop_and_save_photo(*args), crop_tasks))
 
-    return plan.book_title, plan.book_subtitle, plan.hero_cover_photo_id, clusters, pages
+    return plan.book_title, plan.book_subtitle, plan.hero_cover_photo_id, clusters, pages, plan.location

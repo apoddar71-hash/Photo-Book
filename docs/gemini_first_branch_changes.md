@@ -19,6 +19,7 @@ In addition to the Smart Hybrid pipeline, this branch introduces:
 - **Configurable Page Layout Fill (`high`, `medium`, `low`)**: Allowing users to maximize photo coverage across the 10×10" page with tight margins (down to 0.25") while preventing header/caption overlap.
 - **Tight Aesthetic Smart Cropping (`tight`, `balanced`, `wide`)**: Intelligently trimming peripheral dead space (sky, ground, walls) to emphasize human subjects while guaranteeing 100% face safety.
 - **Photo Captions Toggle (`include_captions`)**: Allowing users to choose whether to render AI-generated story captions under photos or create a clean, minimalist photo-only gallery.
+- **Clean Styling & Dynamic Cover Location**: Removed rigid boilerplate labels (`"CURATED 10×10 INCH PHOTO BOOK"`, `"A Curated 10×10 Photo Book"`) and dates from all pages, and dynamically elevated recognized geographic locations (e.g. `📍 San Juan, Puerto Rico`) to the cover page eyebrow and subtitle.
 - **Dashboard UI Controls**: Direct dropdowns and status badges on the web UI for fill modes, cropping focus, and caption display.
 
 ---
@@ -163,7 +164,27 @@ Some users want a rich documentary narrative with AI-synthesized story lines and
 
 ---
 
-## 7. Dashboard & User Interface Enhancements
+## 7. Feature Detail: Clean Styling & Dynamic Cover Location
+
+### The Problem
+Earlier builds rendered repetitive boilerplate headers (`"CURATED 10×10 INCH PHOTO BOOK"`, `"A Curated 10×10 Photo Book"`) and explicit ISO date ranges (`(2024-04-12 to 2024-04-15)`) across cover eyebrows, subtitles, and chapter headers. This looked mechanical and detracted from the destination and emotional themes.
+
+### The Solution
+1. **Purged Boilerplate & Dates**:
+   - Removed `"CURATED 10×10 INCH PHOTO BOOK"` from the front cover and endpapers.
+   - Removed `"A Curated 10×10 Photo Book"` from book subtitles.
+   - Stripped raw date stamps (`(2024-04-12)`, `2024-04-12 to 2024-04-15`) from chapter titles, headers, subtitles, and captions across all pages via [`strip_curated_and_dates`](../photobook/analyzer.py).
+   - Chapter headers now read cleanly as `Chapter 1 — Historic Old Town` or `Memories & Highlights`.
+2. **Dynamic Geographic Location on Cover**:
+   - Added [`extract_book_location`](../photobook/analyzer.py) to extract the primary recognized landmark/place name from the Hero cover photo and consensus across Gemini 3.8 Flash Vision photo tags.
+   - On the cover page:
+     - Top Eyebrow: Displays the uppercase destination (e.g. `SAN JUAN, PUERTO RICO`). If no location is detected, the eyebrow is cleanly omitted rather than showing placeholder text.
+     - Cover Subtitle: Displays `📍 San Juan, Puerto Rico` or destination narrative.
+   - Preserves `location: Optional[str]` on `PhotoBookResult` ([`photobook/models.py`](../photobook/models.py)) for downstream apps and UI badge display.
+
+---
+
+## 8. Dashboard & User Interface Enhancements
 
 File: [`static/index.html`](../static/index.html)
 
@@ -186,12 +207,13 @@ File: [`static/index.html`](../static/index.html)
      - `Fill: High` / `Fill: Medium` / `Fill: Low`
      - `Crop: Tight` / `Crop: Balanced` / `Crop: Wide`
      - `Captions: Yes` / `Captions: No`
+     - `Location: <Recognized Destination>` (when available)
 5. **Interactive 3D Viewer & Controls**:
    - Integrates with the 3D Lay-Flat viewer, book flipping, and autoplay features.
 
 ---
 
-## 8. API and Data Model Changes
+## 9. API and Data Model Changes
 
 ### `app.py`
 - Updated `/api/build` and `/api/build-stream` endpoints:
@@ -200,7 +222,7 @@ File: [`static/index.html`](../static/index.html)
       photos_dir: Optional[str] = None
       folder_path: Optional[str] = None
       title: str = "Our Unforgettable Journey"
-      subtitle: str = "A Curated Visual Chronicle"
+      subtitle: str = "A Visual Chronicle"
       target_pages: int = 40
       max_book_photos: int = 90
       page_fill_mode: str = "high"       # "low", "medium", "high"
@@ -209,14 +231,14 @@ File: [`static/index.html`](../static/index.html)
   ```
 
 ### `photobook/models.py`
-- Added `page_fill_mode: str = "high"`, `crop_focus: str = "tight"`, and `include_captions: bool = True` to `PhotoBookResult`.
+- Added `page_fill_mode: str = "high"`, `crop_focus: str = "tight"`, `include_captions: bool = True`, and `location: Optional[str] = None` to `PhotoBookResult`.
 
 ### `photobook/pipeline.py`
-- `build_photo_book` accepts `include_captions: bool = True` and threads it to renderers and `PhotoBookResult`.
+- `build_photo_book` accepts `include_captions: bool = True`, calls `extract_book_location`, and passes `location` to renderers and `PhotoBookResult`.
 
 ---
 
-## 9. Test Suite & Verification
+## 10. Test Suite & Verification
 
 All changes are covered by comprehensive automated tests in [`tests/test_photobook.py`](../tests/test_photobook.py):
 
@@ -232,26 +254,29 @@ All changes are covered by comprehensive automated tests in [`tests/test_photobo
 3. **`test_include_captions_toggle_in_pipeline_and_renderers`**:
    - Verifies that `include_captions=False` suppresses slot captions and footer captions in both PDF and HTML renders while preserving valid PDF output.
    - Verifies that `include_captions=True` renders story captions under photos.
+4. **`test_remove_curated_and_dates_and_include_location_on_cover`**:
+   - Verifies that `"CURATED 10×10 INCH PHOTO BOOK"` and date patterns are completely stripped from HTML and PDF pages.
+   - Confirms dynamic detection and rendering of geographic locations on the cover.
 
 ### Test Execution
 ```bash
 uv run pytest
-# Output: 12 passed in 1.53s
+# Output: 13 passed in 1.69s
 ```
 
 ---
 
-## 10. Summary of Modified Files on `Gemini-first`
+## 11. Summary of Modified Files on `Gemini-first`
 
 | File | Primary Changes |
 |---|---|
-| [`photobook/analyzer.py`](../photobook/analyzer.py) | Added `coarse_filter_photos`, `deduplicate_and_curate_with_gemini`, `PAGE_TEMPLATES_BY_FILL`, and `get_page_templates`. |
+| [`photobook/analyzer.py`](../photobook/analyzer.py) | Added `coarse_filter_photos`, `deduplicate_and_curate_with_gemini`, `extract_book_location`, `strip_curated_and_dates`, `PAGE_TEMPLATES_BY_FILL`, and `get_page_templates`. |
 | [`photobook/cropper.py`](../photobook/cropper.py) | Added `crop_focus` parameter (`tight`, `balanced`, `wide`) to `compute_aesthetic_crop` with dead-space removal and face preservation. |
-| [`photobook/pipeline.py`](../photobook/pipeline.py) | Implemented the 8-stage Smart Hybrid orchestration and threaded `include_captions`. |
-| [`photobook/models.py`](../photobook/models.py) | Added `page_fill_mode`, `crop_focus`, and `include_captions` fields to `PhotoBookResult`. |
-| [`app.py`](../app.py) | Exposed `page_fill_mode`, `crop_focus`, and `include_captions` on REST endpoints. |
-| [`static/index.html`](../static/index.html) | Added Fill, Crop, and Captions dropdown controls, live status badges, and reactive spread rendering. |
-| [`photobook/renderer.py`](../photobook/renderer.py) | Conditioned slot subcaptions, page captions, and cover hero captions on `include_captions` in PDF and HTML. |
-| [`tests/test_photobook.py`](../tests/test_photobook.py) | Added end-to-end tests for Smart Hybrid flow, fill modes, aesthetic cropping, and captions toggle. |
+| [`photobook/pipeline.py`](../photobook/pipeline.py) | Orchestrates Smart Hybrid pipeline, extracts location, and threads options through `build_photo_book`. |
+| [`photobook/models.py`](../photobook/models.py) | Added `page_fill_mode`, `crop_focus`, `include_captions`, and `location` fields to `PhotoBookResult`. |
+| [`app.py`](../app.py) | Exposed options and location on REST endpoints. |
+| [`static/index.html`](../static/index.html) | Removed boilerplate and dates from all pages; displays cover location in eyebrow and subtitle; added live status badges. |
+| [`photobook/renderer.py`](../photobook/renderer.py) | Purged "CURATED 10x10" and dates from PDF and HTML; displays uppercase location on cover eyebrow and subtitle. |
+| [`tests/test_photobook.py`](../tests/test_photobook.py) | Added end-to-end unit tests covering all features and clean styling assertions. |
 | [`docs/pipeline_flow.md`](pipeline_flow.md) | Updated pipeline diagram and stage descriptions to reflect the Smart Hybrid model. |
 | [`docs/gemini_first_branch_changes.md`](gemini_first_branch_changes.md) | Master documentation file detailing all branch changes. |

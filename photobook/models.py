@@ -269,6 +269,7 @@ class PhotoBookResult(BaseModel):
     page_fill_mode: str = "high"
     crop_focus: str = "tight"
     include_captions: bool = True
+    location: Optional[str] = None
     hero_cover_photo_id: str
     total_scanned: int
     total_selected: int

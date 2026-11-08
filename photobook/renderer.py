@@ -11,6 +11,7 @@ from reportlab.lib.colors import HexColor
 from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas
 
+from photobook.analyzer import strip_curated_and_dates
 from photobook.models import BookPage, PhotoBookResult, PhotoMetadata
 
 
@@ -63,15 +64,18 @@ def render_pdf_photobook(result: PhotoBookResult, out_pdf_path: str | Path) -> P
             c.setLineWidth(1.0)
             c.rect(0.32 * inch, 0.32 * inch, 9.36 * inch, 9.36 * inch, stroke=1, fill=0)
 
-            # Eyebrow header (well inside the 0.32in top border)
-            c.setFillColor(HexColor("#C5A46D"))
-            c.setFont("Helvetica-Bold", 8.5)
-            c.drawCentredString(PAGE_W / 2.0, PAGE_H - 0.68 * inch, "CURATED 10×10 INCH PHOTO BOOK")
+            # Eyebrow header: display location if available (no "CURATED 10x10" and no dates)
+            loc_text = (result.location or "").strip()
+            if loc_text:
+                c.setFillColor(HexColor("#C5A46D"))
+                c.setFont("Helvetica-Bold", 8.5)
+                c.drawCentredString(PAGE_W / 2.0, PAGE_H - 0.68 * inch, loc_text.upper())
 
             # Book Title (1-2 lines max, well above y_in=1.65)
             c.setFillColor(HexColor("#FAF7F2"))
             c.setFont("Times-Bold", 17)
-            title_lines = _wrap_text_lines(c, page.chapter_title or result.title, "Times-Bold", 17, 8.2 * inch, max_lines=2)
+            clean_title = strip_curated_and_dates(page.chapter_title or result.title)
+            title_lines = _wrap_text_lines(c, clean_title, "Times-Bold", 17, 8.2 * inch, max_lines=2)
             cur_title_y = PAGE_H - 0.94 * inch
             for t_ln in title_lines:
                 c.drawCentredString(PAGE_W / 2.0, cur_title_y, t_ln)
@@ -96,17 +100,25 @@ def render_pdf_photobook(result: PhotoBookResult, out_pdf_path: str | Path) -> P
                 if result.include_captions and slot.caption:
                     c.setFillColor(HexColor("#E8E2D5"))
                     c.setFont("Times-Italic", 11)
-                    cap_lines = _wrap_text_lines(c, slot.caption, "Times-Italic", 11, 7.8 * inch, max_lines=2)
-                    cur_y = y_pt - 0.32 * inch
-                    for ln in cap_lines:
-                        c.drawCentredString(PAGE_W / 2.0, cur_y, ln)
-                        cur_y -= 0.19 * inch
+                    clean_hero_cap = strip_curated_and_dates(slot.caption)
+                    if clean_hero_cap:
+                        cap_lines = _wrap_text_lines(c, clean_hero_cap, "Times-Italic", 11, 7.8 * inch, max_lines=2)
+                        cur_y = y_pt - 0.32 * inch
+                        for ln in cap_lines:
+                            c.drawCentredString(PAGE_W / 2.0, cur_y, ln)
+                            cur_y -= 0.19 * inch
 
             # Subtitle at bottom of cover (well inside the 0.32in bottom border)
             c.setFillColor(HexColor("#C5A46D"))
             c.setFont("Helvetica", 9.5)
-            cov_sub = (page.group_caption if result.include_captions else None) or result.subtitle
-            c.drawCentredString(PAGE_W / 2.0, 0.58 * inch, cov_sub)
+            raw_cov_sub = (page.group_caption if result.include_captions else None) or result.subtitle
+            cov_sub = strip_curated_and_dates(raw_cov_sub)
+            if not cov_sub and loc_text:
+                cov_sub = f"📍 {loc_text}"
+            elif loc_text and loc_text.lower() not in cov_sub.lower():
+                cov_sub = f"📍 {loc_text} • {cov_sub}" if cov_sub else f"📍 {loc_text}"
+            if cov_sub:
+                c.drawCentredString(PAGE_W / 2.0, 0.58 * inch, cov_sub)
             c.showPage()
             continue
 
@@ -120,13 +132,14 @@ def render_pdf_photobook(result: PhotoBookResult, out_pdf_path: str | Path) -> P
         c.rect(0.32 * inch, 0.32 * inch, 9.36 * inch, 9.36 * inch, stroke=1, fill=0)
 
         # Chapter / Cluster Header (1-2 lines max, always finishes above 1.38in; slots start >= 1.60in)
-        if page.chapter_title:
+        clean_chapter = strip_curated_and_dates(page.chapter_title)
+        if clean_chapter:
             c.setFillColor(HexColor("#8C6D3F"))
             c.setFont("Helvetica-Bold", 8.0)
             c.drawString(0.75 * inch, PAGE_H - 0.62 * inch, "CHAPTER")
             c.setFillColor(HexColor("#1E232A"))
             c.setFont("Times-Bold", 13.0)
-            ch_lines = _wrap_text_lines(c, page.chapter_title, "Times-Bold", 13.0, 8.5 * inch, max_lines=2)
+            ch_lines = _wrap_text_lines(c, clean_chapter, "Times-Bold", 13.0, 8.5 * inch, max_lines=2)
             ch_y = PAGE_H - 0.84 * inch
             for ch_ln in ch_lines:
                 c.drawString(0.75 * inch, ch_y, ch_ln)
@@ -155,17 +168,19 @@ def render_pdf_photobook(result: PhotoBookResult, out_pdf_path: str | Path) -> P
 
             # Individual slot caption (up to 2 lines; fits cleanly inside the gap)
             if result.include_captions and len(page.slots) > 1 and slot.caption:
-                c.setFillColor(HexColor("#4A4F55"))
-                c.setFont("Times-Italic", 8.5)
-                lines = _wrap_text_lines(c, slot.caption, "Times-Italic", 8.5, w_pt - 4, max_lines=2)
-                sub_y = y_pt - 13
-                for sub_ln in lines:
-                    c.drawString(x_pt + 2, sub_y, sub_ln)
-                    sub_y -= 10.5
+                clean_slot_cap = strip_curated_and_dates(slot.caption)
+                if clean_slot_cap:
+                    c.setFillColor(HexColor("#4A4F55"))
+                    c.setFont("Times-Italic", 8.5)
+                    lines = _wrap_text_lines(c, clean_slot_cap, "Times-Italic", 8.5, w_pt - 4, max_lines=2)
+                    sub_y = y_pt - 13
+                    for sub_ln in lines:
+                        c.drawString(x_pt + 2, sub_y, sub_ln)
+                        sub_y -= 10.5
 
         # Page / Group Caption (1-2 lines max) at bottom of 10x10 page
         if result.include_captions:
-            footer_caption = page.group_caption or (page.slots[0].caption if page.slots else "")
+            footer_caption = strip_curated_and_dates(page.group_caption or (page.slots[0].caption if page.slots else ""))
             if footer_caption:
                 c.setFillColor(HexColor("#22262C"))
                 c.setFont("Times-Roman", 11)
@@ -209,6 +224,7 @@ def save_analysis_files(result: PhotoBookResult) -> tuple[Path, Path]:
     lines += [
         f"- **Book Dimensions:** `10.0 × 10.0 inches` (Page Fill: `{result.page_fill_mode}`, Crop Focus: `{result.crop_focus}`, Captions: `{'Yes' if result.include_captions else 'No'}`)",
         f"- **Hero Cover Photo:** `{result.hero_cover_photo_id}`",
+        f"- **Primary Location:** `{result.location or 'N/A'}`",
         f"- **Summary Counts:** {result.total_scanned} scanned → **{result.total_selected} selected**, "
         f"{result.total_excluded_duplicates} duplicates removed, {result.total_excluded_similar} similar burst shots removed, "
         f"{result.total_excluded_documents} documents removed, {result.total_excluded_low_quality} low-quality removed",
@@ -300,20 +316,40 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
             top_pct = slot.y_in * 10.0
             width_pct = slot.width_in * 10.0
             height_pct = slot.height_in * 10.0
+            loc_text = (result.location or "").strip()
+            clean_title = strip_curated_and_dates(pg.chapter_title or result.title)
+            clean_hero_cap = strip_curated_and_dates(slot.caption)
+            hero_cap_html = (
+                f'<p class="cover-hero-caption">{html.escape(clean_hero_cap)}</p>'
+                if (result.include_captions and clean_hero_cap)
+                else ""
+            )
+            raw_cov_sub = (pg.group_caption if result.include_captions else None) or result.subtitle
+            cov_sub = strip_curated_and_dates(raw_cov_sub)
+            if not cov_sub and loc_text:
+                cov_sub = f"📍 {loc_text}"
+            elif loc_text and loc_text.lower() not in cov_sub.lower():
+                cov_sub = f"📍 {loc_text} • {cov_sub}" if cov_sub else f"📍 {loc_text}"
+
+            eyebrow_html = (
+                f'<div class="cover-eyebrow">{html.escape(loc_text.upper())}</div>'
+                if loc_text
+                else ""
+            )
             page_cards_html.append(
                 f"""
                 <section class="book-page cover-page" data-page="{pg.page_number}">
                   <div class="cover-border"></div>
                   <div class="cover-header">
-                    <div class="cover-eyebrow">CURATED 10×10 INCH PHOTO BOOK</div>
-                    <h1 class="cover-title">{html.escape(pg.chapter_title or result.title)}</h1>
+                    {eyebrow_html}
+                    <h1 class="cover-title">{html.escape(clean_title)}</h1>
                   </div>
                   <div class="photo-slot cover-slot" style="left:{left_pct:.2f}%;top:{top_pct:.2f}%;width:{width_pct:.2f}%;height:{height_pct:.2f}%;">
                     <img src="{uri}" alt="{html.escape(slot.filename)}" />
                   </div>
                   <div class="cover-footer">
-                    {f'<p class="cover-hero-caption">{html.escape(slot.caption)}</p>' if (result.include_captions and slot.caption) else ''}
-                    <div class="cover-subtitle">{html.escape((pg.group_caption if result.include_captions else None) or result.subtitle)}</div>
+                    {hero_cap_html}
+                    {f'<div class="cover-subtitle">{html.escape(cov_sub)}</div>' if cov_sub else ''}
                   </div>
                 </section>
                 """
@@ -327,9 +363,10 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
             top_pct = slot.y_in * 10.0
             width_pct = slot.width_in * 10.0
             height_pct = slot.height_in * 10.0
+            clean_slot_cap = strip_curated_and_dates(slot.caption)
             subcap = (
-                f'<div class="slot-subcaption">{html.escape(slot.caption)}</div>'
-                if result.include_captions and len(pg.slots) > 1 and slot.caption
+                f'<div class="slot-subcaption">{html.escape(clean_slot_cap)}</div>'
+                if result.include_captions and len(pg.slots) > 1 and clean_slot_cap
                 else ""
             )
             slots_html.append(
@@ -341,17 +378,19 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
                 """
             )
 
+        clean_chapter = strip_curated_and_dates(pg.chapter_title)
         chapter_html = (
             f"""
             <div class="page-chapter-header">
               <span class="chapter-tag">CHAPTER</span>
-              <h2>{html.escape(pg.chapter_title)}</h2>
+              <h2>{html.escape(clean_chapter)}</h2>
             </div>
             """
-            if pg.chapter_title
+            if clean_chapter
             else ""
         )
-        footer_cap = (pg.group_caption or (pg.slots[0].caption if pg.slots else "")) if result.include_captions else ""
+        raw_footer = (pg.group_caption or (pg.slots[0].caption if pg.slots else "")) if result.include_captions else ""
+        footer_cap = strip_curated_and_dates(raw_footer)
         footer_cap_html = (
             f'<p class="page-group-caption">{html.escape(footer_cap)}</p>'
             if footer_cap
@@ -375,15 +414,24 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
     interior_cards = page_cards_html[1:]
     spreads_html: list[str] = []
     if cover_html:
+        clean_end_title = strip_curated_and_dates(result.title)
+        raw_end_sub = strip_curated_and_dates(result.subtitle)
+        loc_text = (result.location or "").strip()
+        if not raw_end_sub and loc_text:
+            end_sub = f"📍 {loc_text}"
+        elif loc_text and loc_text.lower() not in raw_end_sub.lower():
+            end_sub = f"📍 {loc_text} • {raw_end_sub}" if raw_end_sub else f"📍 {loc_text}"
+        else:
+            end_sub = raw_end_sub
         spreads_html.append(
             f"""
             <div class="book-spread">
               <section class="book-page endpaper-page">
                 <div class="interior-border"></div>
                 <div class="endpaper-content">
-                  <div class="endpaper-eyebrow">10×10 INCH HARDCOVER EDITION</div>
-                  <div class="endpaper-title">{html.escape(result.title)}</div>
-                  <div class="endpaper-sub">{html.escape(result.subtitle)}</div>
+                  <div class="endpaper-eyebrow">LAY-FLAT HARDCOVER EDITION</div>
+                  <div class="endpaper-title">{html.escape(clean_end_title)}</div>
+                  {f'<div class="endpaper-sub">{html.escape(end_sub)}</div>' if end_sub else ''}
                 </div>
               </section>
               {cover_html}
