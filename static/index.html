@@ -616,6 +616,275 @@
     font-size: 13px;
     margin-bottom: 16px;
   }
+
+  /* Live Customer Engagement & Discovery Panel */
+  .live-curator-panel {
+    background: linear-gradient(145deg, rgba(23, 26, 35, 0.96), rgba(15, 17, 24, 0.98));
+    border: 1px solid rgba(197, 164, 109, 0.45);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 22px;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.55), 0 0 24px rgba(197, 164, 109, 0.1);
+    transition: all 0.3s ease;
+  }
+  .curator-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .curator-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .pulse-indicator {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    color: var(--gold);
+    text-transform: uppercase;
+    display: inline-flex;
+    align-items: center;
+  }
+  .pulse-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: #4ade80;
+    border-radius: 50%;
+    margin-right: 8px;
+    box-shadow: 0 0 8px #4ade80;
+    animation: pulseBeacon 1.6s infinite ease-in-out;
+  }
+  @keyframes pulseBeacon {
+    0%, 100% { transform: scale(0.9); opacity: 0.8; box-shadow: 0 0 4px #4ade80; }
+    50% { transform: scale(1.25); opacity: 1; box-shadow: 0 0 14px #4ade80; }
+  }
+  .curator-subtitle {
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  .btn-curator-toggle {
+    background: rgba(197, 164, 109, 0.12);
+    border: 1px solid rgba(197, 164, 109, 0.35);
+    color: var(--gold);
+    font-size: 11.5px;
+    font-weight: 600;
+    border-radius: 6px;
+    padding: 5px 11px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .btn-curator-toggle:hover {
+    background: rgba(197, 164, 109, 0.25);
+    border-color: var(--gold);
+  }
+  .curator-chips-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 12px 0 16px 0;
+  }
+  .curator-chip {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-size: 11.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #e2dfd9;
+  }
+  .curator-chip b {
+    color: #fff;
+  }
+  /* Spotlight Card Layout */
+  .curator-spotlight {
+    display: flex;
+    gap: 20px;
+    background: rgba(12, 14, 20, 0.7);
+    border: 1px solid rgba(197, 164, 109, 0.25);
+    border-radius: 10px;
+    padding: 14px;
+    position: relative;
+    overflow: hidden;
+  }
+  @media (max-width: 820px) {
+    .curator-spotlight { flex-direction: column; }
+  }
+  .spotlight-image-col {
+    flex: 0 0 280px;
+    max-width: 280px;
+  }
+  @media (max-width: 820px) {
+    .spotlight-image-col { flex: 1 1 auto; max-width: 100%; }
+  }
+  .spotlight-image-container {
+    width: 100%;
+    height: 200px;
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #000;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+  .spotlight-image-container img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.3s ease;
+  }
+  .spotlight-active-flash {
+    animation: spotlightFlashAnim 0.45s ease-out;
+  }
+  @keyframes spotlightFlashAnim {
+    0% { filter: brightness(1.75) contrast(1.1); transform: scale(0.97); }
+    100% { filter: brightness(1.0) contrast(1.0); transform: scale(1.0); }
+  }
+  .spotlight-badge {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    background: rgba(15, 18, 25, 0.88);
+    backdrop-filter: blur(4px);
+    border: 1px solid var(--gold);
+    color: #f7f3ea;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 9px;
+    border-radius: 6px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+  }
+  .spotlight-details-col {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-width: 0;
+  }
+  .spotlight-filename-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .spotlight-filename {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #e5e7eb;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 65%;
+  }
+  .spotlight-caption-card {
+    background: rgba(197, 164, 109, 0.08);
+    border-left: 3px solid var(--gold);
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    position: relative;
+  }
+  .spotlight-caption-text {
+    font-family: Georgia, "Times New Roman", serif;
+    font-style: italic;
+    font-size: 14px;
+    line-height: 1.45;
+    color: #fdfbf7;
+    margin: 0;
+  }
+  .spotlight-meta-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .live-tag {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 5px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .live-tag.landmark {
+    background: rgba(197, 164, 109, 0.22);
+    border: 1px solid rgba(197, 164, 109, 0.65);
+    color: #fce8c3;
+  }
+  .live-tag.theme {
+    background: rgba(99, 102, 241, 0.18);
+    border: 1px solid rgba(99, 102, 241, 0.45);
+    color: #c7d2fe;
+  }
+  .live-tag.quality {
+    background: rgba(234, 179, 8, 0.18);
+    border: 1px solid rgba(234, 179, 8, 0.45);
+    color: #fef08a;
+  }
+  .live-tag.faces {
+    background: rgba(34, 197, 94, 0.18);
+    border: 1px solid rgba(34, 197, 94, 0.45);
+    color: #86efac;
+  }
+  /* Filmstrip section */
+  .curator-filmstrip-wrap {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .filmstrip-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .curator-filmstrip {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    scroll-behavior: smooth;
+  }
+  .curator-filmstrip::-webkit-scrollbar {
+    height: 5px;
+  }
+  .curator-filmstrip::-webkit-scrollbar-thumb {
+    background: rgba(197, 164, 109, 0.35);
+    border-radius: 4px;
+  }
+  .filmstrip-thumb {
+    width: 60px;
+    height: 60px;
+    min-width: 60px;
+    border-radius: 6px;
+    object-fit: cover;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all 0.15s ease;
+    background: #111;
+  }
+  .filmstrip-thumb:hover {
+    transform: translateY(-2px) scale(1.04);
+    border-color: rgba(197, 164, 109, 0.6);
+  }
+  .filmstrip-thumb.active {
+    border-color: var(--gold);
+    box-shadow: 0 0 12px rgba(197, 164, 109, 0.7);
+    transform: scale(1.05);
+  }
 </style>
 </head>
 <body>
@@ -804,6 +1073,70 @@
       Enter your personal photo folder path and click <b>"Build 10×10 Photo Book"</b>.
     </div>
 
+    <!-- Live Customer Engagement & Discovery Panel -->
+    <div id="liveCuratorPanel" class="live-curator-panel" style="display:none;">
+      <div class="curator-header">
+        <div class="curator-title-group">
+          <div class="pulse-indicator">
+            <span class="pulse-dot"></span>
+            <span id="curatorLiveStatusText">LIVE GEMINI VISION ANALYSIS</span>
+          </div>
+          <div class="curator-subtitle" id="curatorSubtitle">
+            Watching AI analyze scenes, emotions &amp; landmarks in real time...
+          </div>
+        </div>
+        <div>
+          <button type="button" id="toggleCuratorPanelBtn" class="btn-curator-toggle">
+            Hide Live Feed ▾
+          </button>
+        </div>
+      </div>
+
+      <div class="curator-chips-bar">
+        <div class="curator-chip"><span>📸</span> <span id="curatorAnalyzedCount"><b>0</b> Photos Explored</span></div>
+        <div class="curator-chip"><span>🏛️</span> <span id="curatorLandmarksCount"><b>0</b> Landmarks Discovered</span></div>
+        <div class="curator-chip"><span>⭐</span> <span id="curatorAvgScore"><b>--</b> Avg Quality</span></div>
+        <div class="curator-chip"><span>👥</span> <span id="curatorPortraitsCount"><b>0</b> Portraits Safe</span></div>
+      </div>
+
+      <!-- Featured Spotlight Card -->
+      <div class="curator-spotlight" id="curatorSpotlight">
+        <div class="spotlight-image-col">
+          <div class="spotlight-image-container">
+            <img id="spotlightImg" src="" alt="Live photo analysis preview" />
+            <div class="spotlight-badge" id="spotlightBadge">⭐ Ready • Exploring</div>
+          </div>
+        </div>
+        <div class="spotlight-details-col">
+          <div class="spotlight-filename-row">
+            <span class="spotlight-filename" id="spotlightFilename">Waiting for first photo...</span>
+            <span class="spotlight-time" id="spotlightTime">Stage 1/5 Active</span>
+          </div>
+          <div class="spotlight-caption-card">
+            <p class="spotlight-caption-text" id="spotlightCaption">
+              Gemini Vision is actively exploring your collection, identifying landmarks, facial expressions, and scene composition...
+            </p>
+          </div>
+          <div class="spotlight-meta-tags" id="spotlightTags">
+            <span class="live-tag landmark">🏛️ Landmark Detection</span>
+            <span class="live-tag theme">✨ Memory Curation</span>
+            <span class="live-tag faces">👥 Face-Safe Protection</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Discovery Filmstrip -->
+      <div class="curator-filmstrip-wrap">
+        <div class="filmstrip-header">
+          <span>RECENT DISCOVERIES (Click any photo to inspect)</span>
+          <span id="filmstripCounter">0 photos</span>
+        </div>
+        <div class="curator-filmstrip" id="curatorFilmstrip">
+          <!-- Dynamic thumbnails -->
+        </div>
+      </div>
+    </div>
+
     <div id="resultsContainer" style="display:none;">
       <div class="pill-bar" id="statsBar"></div>
       <div class="download-bar" id="downloadBar"></div>
@@ -931,6 +1264,172 @@
     } catch (e) {}
   }
 
+  // Live Customer Engagement Panel state
+  const liveCuratorPanel = document.getElementById('liveCuratorPanel');
+  const toggleCuratorPanelBtn = document.getElementById('toggleCuratorPanelBtn');
+  const curatorLiveStatusText = document.getElementById('curatorLiveStatusText');
+  const curatorSubtitle = document.getElementById('curatorSubtitle');
+  const curatorAnalyzedCount = document.getElementById('curatorAnalyzedCount');
+  const curatorLandmarksCount = document.getElementById('curatorLandmarksCount');
+  const curatorAvgScore = document.getElementById('curatorAvgScore');
+  const curatorPortraitsCount = document.getElementById('curatorPortraitsCount');
+  const spotlightImg = document.getElementById('spotlightImg');
+  const spotlightBadge = document.getElementById('spotlightBadge');
+  const spotlightFilename = document.getElementById('spotlightFilename');
+  const spotlightTime = document.getElementById('spotlightTime');
+  const spotlightCaption = document.getElementById('spotlightCaption');
+  const spotlightTags = document.getElementById('spotlightTags');
+  const curatorFilmstrip = document.getElementById('curatorFilmstrip');
+  const filmstripCounter = document.getElementById('filmstripCounter');
+
+  let liveDiscoveredPhotos = [];
+  let spotlightQueue = [];
+  let knownLandmarks = new Set();
+  let totalPortraitsCount = 0;
+  let runningScoreSum = 0;
+  let runningScoreCount = 0;
+  let userPausedSpotlightUntil = 0;
+  let spotlightIntervalId = null;
+  let currentSpotlightPhotoId = null;
+
+  if (toggleCuratorPanelBtn) {
+    toggleCuratorPanelBtn.addEventListener('click', () => {
+      const sp = document.getElementById('curatorSpotlight');
+      const fs = document.querySelector('.curator-filmstrip-wrap');
+      const isHidden = sp.style.display === 'none';
+      if (isHidden) {
+        sp.style.display = 'flex';
+        fs.style.display = 'block';
+        toggleCuratorPanelBtn.textContent = 'Hide Live Feed ▾';
+      } else {
+        sp.style.display = 'none';
+        fs.style.display = 'none';
+        toggleCuratorPanelBtn.textContent = 'Show Live Feed ▴';
+      }
+    });
+  }
+
+  function getPhotoPreviewUrl(p) {
+    if (!p) return '';
+    return `/api/photos/preview?id=${encodeURIComponent(p.photo_id)}&file=${encodeURIComponent(p.analysis_path || '')}`;
+  }
+
+  function displaySpotlightPhoto(p, isManualClick = false) {
+    if (!p) return;
+    currentSpotlightPhotoId = p.photo_id;
+    const previewUrl = getPhotoPreviewUrl(p);
+
+    // Trigger visual flash
+    spotlightImg.classList.remove('spotlight-active-flash');
+    void spotlightImg.offsetWidth;
+    spotlightImg.src = previewUrl;
+    spotlightImg.classList.add('spotlight-active-flash');
+
+    spotlightFilename.textContent = p.filename || p.photo_id;
+    const timeStr = p.captured_at ? p.captured_at.replace('T', ' ').slice(0, 19) : (p.camera_model || 'Captured Photo');
+    spotlightTime.textContent = timeStr;
+
+    const qScore = Number(p.quality_score || p.composite_score || 8.0).toFixed(1);
+    const scoreEmoji = qScore >= 9.0 ? '✨' : (qScore >= 8.0 ? '⭐' : '📸');
+    const badgeExtra = p.location_or_landmark || p.event_theme || 'Analyzed';
+    spotlightBadge.innerHTML = `${scoreEmoji} <b>${qScore}</b> • ${escapeHtml(badgeExtra)}`;
+
+    const capText = stripCuratedAndDates(p.caption || 'Analyzing scene details, atmosphere, and visual appeal...');
+    spotlightCaption.textContent = `“${capText}”`;
+
+    // Render tags
+    const tagElements = [];
+    if (p.location_or_landmark) {
+      tagElements.push(`<span class="live-tag landmark">🏛️ ${escapeHtml(p.location_or_landmark)}</span>`);
+    }
+    if (p.event_theme && (!p.location_or_landmark || !p.event_theme.toLowerCase().includes(p.location_or_landmark.toLowerCase()))) {
+      tagElements.push(`<span class="live-tag theme">🏷️ ${escapeHtml(p.event_theme)}</span>`);
+    }
+    tagElements.push(`<span class="live-tag quality">⭐ Score: ${qScore}/10</span>`);
+    if (p.faces_count && p.faces_count > 0) {
+      tagElements.push(`<span class="live-tag faces">👥 ${p.faces_count} Face${p.faces_count > 1 ? 's' : ''} (Safe)</span>`);
+    }
+    if (p.camera_model) {
+      tagElements.push(`<span class="live-tag" style="background:rgba(255,255,255,0.08);color:#d1d5db;">📷 ${escapeHtml(p.camera_model)}</span>`);
+    }
+    spotlightTags.innerHTML = tagElements.join(' ');
+
+    // Update active thumbnail border in filmstrip
+    document.querySelectorAll('.filmstrip-thumb').forEach(thumb => {
+      if (thumb.dataset.id === p.photo_id) {
+        thumb.classList.add('active');
+        thumb.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      } else {
+        thumb.classList.remove('active');
+      }
+    });
+
+    if (isManualClick) {
+      userPausedSpotlightUntil = Date.now() + 6000;
+    }
+  }
+
+  function addPhotosToLiveCurator(photoList, isScannedOnly = false) {
+    if (!photoList || !photoList.length) return;
+    liveCuratorPanel.style.display = 'block';
+
+    for (const p of photoList) {
+      const existingIdx = liveDiscoveredPhotos.findIndex(item => item.photo_id === p.photo_id);
+      if (existingIdx >= 0) {
+        liveDiscoveredPhotos[existingIdx] = Object.assign(liveDiscoveredPhotos[existingIdx], p);
+        if (p.caption) spotlightQueue.push(liveDiscoveredPhotos[existingIdx]);
+        continue;
+      }
+      liveDiscoveredPhotos.push(p);
+      if (p.caption) {
+        spotlightQueue.push(p);
+      } else if (liveDiscoveredPhotos.length === 1) {
+        spotlightQueue.push(p);
+      }
+
+      if (p.location_or_landmark) {
+        knownLandmarks.add(p.location_or_landmark);
+      }
+      if (p.faces_count && p.faces_count > 0) {
+        totalPortraitsCount += p.faces_count;
+      }
+      if (p.quality_score) {
+        runningScoreSum += p.quality_score;
+        runningScoreCount += 1;
+      }
+
+      // Add to filmstrip
+      const thumb = document.createElement('img');
+      thumb.className = 'filmstrip-thumb';
+      thumb.dataset.id = p.photo_id;
+      thumb.src = getPhotoPreviewUrl(p);
+      thumb.alt = p.filename || p.photo_id;
+      thumb.title = p.caption || p.filename || 'Photo';
+      thumb.loading = 'lazy';
+      thumb.addEventListener('click', () => displaySpotlightPhoto(p, true));
+      curatorFilmstrip.appendChild(thumb);
+    }
+
+    // Keep filmstrip trimmed to 50 latest items
+    while (curatorFilmstrip.children.length > 50) {
+      curatorFilmstrip.removeChild(curatorFilmstrip.firstChild);
+    }
+
+    // Update chips
+    curatorAnalyzedCount.innerHTML = `<b>${liveDiscoveredPhotos.length}</b> Photos Explored`;
+    curatorLandmarksCount.innerHTML = `<b>${knownLandmarks.size}</b> Landmarks Discovered`;
+    if (runningScoreCount > 0) {
+      curatorAvgScore.innerHTML = `<b>${(runningScoreSum / runningScoreCount).toFixed(1)}/10</b> Avg Quality`;
+    }
+    curatorPortraitsCount.innerHTML = `<b>${totalPortraitsCount}</b> Portraits Safe`;
+    filmstripCounter.textContent = `${liveDiscoveredPhotos.length} photos`;
+
+    // Trigger initial spotlight if empty
+    if (!currentSpotlightPhotoId && liveDiscoveredPhotos.length > 0) {
+      displaySpotlightPhoto(liveDiscoveredPhotos[0]);
+    }
+  }
+
   buildBtn.addEventListener('click', async () => {
     const folder = folderInput.value.trim();
     if (!folder) {
@@ -939,6 +1438,39 @@
     }
     localStorage.setItem('photobook_folder_path', folder);
     buildBtn.disabled = true;
+
+    // Reset Live Curator Panel
+    liveDiscoveredPhotos = [];
+    spotlightQueue = [];
+    knownLandmarks = new Set();
+    totalPortraitsCount = 0;
+    runningScoreSum = 0;
+    runningScoreCount = 0;
+    currentSpotlightPhotoId = null;
+    userPausedSpotlightUntil = 0;
+    curatorFilmstrip.innerHTML = '';
+    curatorLiveStatusText.textContent = 'LIVE GEMINI VISION ANALYSIS';
+    curatorSubtitle.textContent = 'Watching AI analyze scenes, emotions & landmarks in real time...';
+    curatorAnalyzedCount.innerHTML = '<b>0</b> Photos Explored';
+    curatorLandmarksCount.innerHTML = '<b>0</b> Landmarks Discovered';
+    curatorAvgScore.innerHTML = '<b>--</b> Avg Quality';
+    curatorPortraitsCount.innerHTML = '<b>0</b> Portraits Safe';
+    filmstripCounter.textContent = '0 photos';
+    liveCuratorPanel.style.display = 'block';
+
+    if (spotlightIntervalId) clearInterval(spotlightIntervalId);
+    spotlightIntervalId = setInterval(() => {
+      if (Date.now() < userPausedSpotlightUntil) return;
+      if (spotlightQueue.length > 0) {
+        const nextP = spotlightQueue.shift();
+        displaySpotlightPhoto(nextP);
+      } else if (liveDiscoveredPhotos.length > 1) {
+        const currentIdx = liveDiscoveredPhotos.findIndex(p => p.photo_id === currentSpotlightPhotoId);
+        const nextIdx = (currentIdx + 1) % liveDiscoveredPhotos.length;
+        displaySpotlightPhoto(liveDiscoveredPhotos[nextIdx]);
+      }
+    }, 1800);
+
     const t0Client = performance.now();
     let latestMsg = 'Starting scan (including .HEIC, .JPG, .PNG)...';
     let latestPct = 1;
@@ -1004,15 +1536,24 @@
             latestMsg = evt.message;
             const elapsedSec = ((performance.now() - t0Client) / 1000).toFixed(1);
             statusBox.innerHTML = `⏳ <b>[${evt.percent}% • ${elapsedSec}s elapsed]</b> ${escapeHtml(evt.message)}`;
+            if (evt.analyzed_photos && evt.analyzed_photos.length) {
+              addPhotosToLiveCurator(evt.analyzed_photos, false);
+            }
+            if (evt.scanned_photos && evt.scanned_photos.length) {
+              addPhotosToLiveCurator(evt.scanned_photos, true);
+            }
           } else if (evt.type === 'error') {
             throw new Error(evt.detail || 'Build failed');
           } else if (evt.type === 'complete') {
             clearInterval(timerInterval);
+            if (spotlightIntervalId) clearInterval(spotlightIntervalId);
             currentBook = evt.book;
             const clientElapsed = Number(((performance.now() - t0Client) / 1000).toFixed(2));
             if (!currentBook.build_duration_seconds) {
               currentBook.build_duration_seconds = clientElapsed;
             }
+            curatorLiveStatusText.textContent = '✨ CURATION COMPLETE — ALL DISCOVERIES PRESERVED';
+            curatorSubtitle.innerHTML = `Gemini explored <b>${currentBook.total_scanned} photos</b> and selected the top <b>${currentBook.total_selected} moments</b> for your 10×10" lay-flat photo book.`;
             currentSpreadIndex = currentBook.pages.length > 1 ? 1 : 0;
             renderBookResults(currentBook);
             const durStr = `${currentBook.build_duration_seconds}s`;

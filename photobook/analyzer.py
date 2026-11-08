@@ -709,6 +709,46 @@ def _call_gemini_vision_batch_api(
     return out_map, used_fallback
 
 
+def _safe_progress(cb: Optional[Callable], msg: str, idx: int, total: int, extra: Optional[dict] = None) -> None:
+    if not cb:
+        return
+    try:
+        cb(msg, idx, total, extra)
+    except TypeError:
+        try:
+            cb(msg, idx, total)
+        except Exception:
+            pass
+
+
+def _format_photo_preview(p: PhotoMetadata) -> dict:
+    a = p.analysis
+    caption = a.caption if a else ""
+    tags: list[str] = []
+    if a:
+        theme = getattr(a, "event_theme", "") or ""
+        loc = getattr(a, "location_or_landmark", "") or ""
+        if theme:
+            tags.append(theme)
+        if loc and loc.lower() not in theme.lower():
+            tags.append(loc)
+    return {
+        "photo_id": p.photo_id,
+        "filename": p.filename,
+        "analysis_path": p.analysis_path,
+        "caption": caption,
+        "quality_score": getattr(a, "aesthetic_score", 8.0) if a else 8.0,
+        "composite_score": getattr(a, "composite_score", 8.0) if a else 8.0,
+        "subject_summary": getattr(a, "subject_summary", "") if a else "",
+        "location_or_landmark": getattr(a, "location_or_landmark", "") if a else "",
+        "event_theme": getattr(a, "event_theme", "") if a else "",
+        "tags": tags,
+        "faces_count": getattr(a, "people_count", 0) if a else 0,
+        "camera_model": p.camera_model or "",
+        "captured_at": p.captured_at or "",
+    }
+
+
 def analyze_photos_with_gemini(
     photos: list[PhotoMetadata],
     model: str = DEFAULT_MODEL,
@@ -717,7 +757,7 @@ def analyze_photos_with_gemini(
     batch_size: int = 1,
     concurrency: int = 12,
     api_key: Optional[str] = None,
-    progress_cb: Optional[Callable[[str, int, int], None]] = None,
+    progress_cb: Optional[Callable[..., None]] = None,
 ) -> tuple[str, Optional[str]]:
     """Run deep image analysis on photos using Gemini with high-speed parallel request execution."""
     from concurrent.futures import wait as futures_wait, FIRST_COMPLETED
@@ -771,19 +811,34 @@ def analyze_photos_with_gemini(
     remaining_photos: list[PhotoMetadata] = []
     g_total = len(photos)
     g_done = 0
+    cached_batch_previews: list[dict] = []
     for p in photos:
         cached = _find_any_cached_analysis(p)
         if cached is not None:
             p.analysis = cached
             g_done += 1
+            cached_batch_previews.append(_format_photo_preview(p))
             if progress_cb and (g_done % 10 == 0 or g_done == g_total):
-                progress_cb(
+                _safe_progress(
+                    progress_cb,
                     f"Loaded cached Gemini analysis {g_done}/{g_total}: {p.filename}",
                     g_done,
                     g_total,
+                    extra={"analyzed_photos": list(cached_batch_previews)},
                 )
+                cached_batch_previews.clear()
             continue
         remaining_photos.append(p)
+
+    if cached_batch_previews and progress_cb:
+        _safe_progress(
+            progress_cb,
+            f"Loaded cached Gemini analysis {g_done}/{g_total}",
+            g_done,
+            g_total,
+            extra={"analyzed_photos": list(cached_batch_previews)},
+        )
+        cached_batch_previews.clear()
 
     effective_batch_size = max(1, min(10, int(batch_size or 1)))
     effective_concurrency = max(1, min(32, int(concurrency or 12)))
@@ -795,7 +850,8 @@ def analyze_photos_with_gemini(
         ]
         pool_workers = min(effective_concurrency, len(batches))
         if progress_cb:
-            progress_cb(
+            _safe_progress(
+                progress_cb,
                 f"Starting parallel Gemini vision analysis across {len(batches)} batches ({pool_workers} parallel workers, batch size={effective_batch_size})...",
                 max(1, g_done),
                 g_total,
@@ -845,11 +901,18 @@ def analyze_photos_with_gemini(
                         fut.result(timeout=1.0)
                     except Exception:
                         pass
+                    batch_previews = [
+                        _format_photo_preview(bp)
+                        for bp in b_list
+                        if bp.analysis and bp.analysis.caption
+                    ]
                     if progress_cb:
-                        progress_cb(
+                        _safe_progress(
+                            progress_cb,
                             f"Parallel analyzed {min(g_done, g_total)}/{g_total} photos ({len(pending)} batches remaining, last: {b_list[-1].filename})",
                             min(g_done, g_total),
                             g_total,
+                            extra={"analyzed_photos": batch_previews},
                         )
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
@@ -864,7 +927,8 @@ def analyze_photos_with_gemini(
     if remaining_photos:
         pool_workers = min(effective_concurrency, len(remaining_photos))
         if progress_cb:
-            progress_cb(
+            _safe_progress(
+                progress_cb,
                 f"Starting parallel single-photo vision analysis across {len(remaining_photos)} photos ({pool_workers} parallel workers)...",
                 max(1, g_done),
                 g_total,
@@ -913,11 +977,14 @@ def analyze_photos_with_gemini(
                         fut.result(timeout=1.0)
                     except Exception:
                         pass
+                    p_previews = [_format_photo_preview(p)] if (p.analysis and p.analysis.caption) else []
                     if progress_cb:
-                        progress_cb(
+                        _safe_progress(
+                            progress_cb,
                             f"Parallel analyzed {min(g_done, g_total)}/{g_total}: {p.filename}",
                             min(g_done, g_total),
                             g_total,
+                            extra={"analyzed_photos": p_previews},
                         )
         finally:
             executor.shutdown(wait=False, cancel_futures=True)

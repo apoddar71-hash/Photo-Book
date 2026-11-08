@@ -10,6 +10,7 @@ from typing import Callable, Optional
 
 from photobook.analyzer import (
     DEFAULT_MODEL,
+    _safe_progress,
     analyze_photos_with_gemini,
     coarse_filter_photos,
     curate_clusters_and_pages,
@@ -41,7 +42,7 @@ def build_photo_book(
     crop_focus: str = "tight",
     include_captions: bool = True,
     api_key: Optional[str] = None,
-    progress_cb: Optional[Callable[[str, int, int], None]] = None,
+    progress_cb: Optional[Callable[..., None]] = None,
 ) -> PhotoBookResult:
     """Execute the complete Photo Book Builder pipeline on a photo folder.
 
@@ -65,12 +66,12 @@ def build_photo_book(
     book_dir.mkdir(parents=True, exist_ok=True)
 
     if progress_cb:
-        progress_cb("Step 1/5: Scanning folder (including .HEIC, .JPG, .PNG) & scaling to 1,120–2,240 px...", 3, 100)
+        _safe_progress(progress_cb, "Step 1/5: Scanning folder (including .HEIC, .JPG, .PNG) & scaling to 1,120–2,240 px...", 3, 100)
 
-    def _scan_progress(msg: str, idx: int, total: int) -> None:
+    def _scan_progress(msg: str, idx: int, total: int, extra: Optional[dict] = None) -> None:
         if progress_cb:
             pct = 3 + int(round((idx / max(1, total)) * 27))
-            progress_cb(f"Step 1/5: {msg}", pct, 100)
+            _safe_progress(progress_cb, f"Step 1/5: {msg}", pct, 100, extra=extra)
 
     t0 = time.perf_counter()
     photos = scan_and_prepare_photos(
@@ -82,10 +83,10 @@ def build_photo_book(
     )
     stage_timings["scan_s"] = round(time.perf_counter() - t0, 2)
 
-    def _pre_progress(msg: str, idx: int, total: int) -> None:
+    def _pre_progress(msg: str, idx: int, total: int, extra: Optional[dict] = None) -> None:
         if progress_cb:
             pct = 22 + int(round((idx / max(1, total)) * 10))
-            progress_cb(f"Step 2/5 (Coarse Local Prune): {msg}", pct, 100)
+            _safe_progress(progress_cb, f"Step 2/5 (Coarse Local Prune): {msg}", pct, 100, extra=extra)
 
     t1 = time.perf_counter()
     pre_analyze_all_photos(
@@ -97,16 +98,17 @@ def build_photo_book(
     stage_timings["coarse_filter_s"] = round(time.perf_counter() - t1, 2)
 
     if progress_cb:
-        progress_cb(
+        _safe_progress(
+            progress_cb,
             f"Step 3/5: Deep Gemini 3.8 Flash analysis on all {len(coarse_survivors)} surviving photos...",
             32,
             100,
         )
 
-    def _gemini_progress(msg: str, idx: int, total: int) -> None:
+    def _gemini_progress(msg: str, idx: int, total: int, extra: Optional[dict] = None) -> None:
         if progress_cb:
             pct = 32 + int(round((idx / max(1, total)) * 38))
-            progress_cb(f"Step 3/5 (Gemini-First Vision): {msg}", pct, 100)
+            _safe_progress(progress_cb, f"Step 3/5 (Gemini-First Vision): {msg}", pct, 100, extra=extra)
 
     t2 = time.perf_counter()
     model_used, model_note = analyze_photos_with_gemini(
@@ -122,7 +124,8 @@ def build_photo_book(
     stage_timings["vision_s"] = round(time.perf_counter() - t2, 2)
 
     if progress_cb:
-        progress_cb(
+        _safe_progress(
+            progress_cb,
             f"Step 4/5: Gemini-powered semantic burst curation & selection ({len(coarse_survivors)} → max {max_book_photos or 'all'})...",
             72,
             100,
@@ -136,7 +139,8 @@ def build_photo_book(
     stage_timings["dedup_s"] = round(time.perf_counter() - t3, 2)
 
     if progress_cb:
-        progress_cb(
+        _safe_progress(
+            progress_cb,
             f"Step 5/5: Clustering {len(selected)} photos ({curation_model}), refining Hero cover ({hero_model}) & face-safe cropping...",
             84,
             100,
@@ -205,7 +209,7 @@ def build_photo_book(
     )
 
     if progress_cb:
-        progress_cb("Step 5/5: Rendering 10×10 inch PDF, interactive HTML book & analysis files...", 92, 100)
+        _safe_progress(progress_cb, "Step 5/5: Rendering 10×10 inch PDF, interactive HTML book & analysis files...", 92, 100)
 
     t4 = time.perf_counter()
     render_html_photobook(result, html_preview_path)
@@ -216,7 +220,8 @@ def build_photo_book(
     save_analysis_files(result)
 
     if progress_cb:
-        progress_cb(
+        _safe_progress(
+            progress_cb,
             f"Complete in {result.build_duration_seconds}s! 10×10 inch Photo Book and Analysis Report ready.",
             100,
             100,

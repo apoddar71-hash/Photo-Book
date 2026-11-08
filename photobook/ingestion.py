@@ -260,12 +260,24 @@ def _process_single_photo(
         return None
 
 
+def _safe_progress(cb: Optional[Callable], msg: str, idx: int, total: int, extra: Optional[dict] = None) -> None:
+    if not cb:
+        return
+    try:
+        cb(msg, idx, total, extra)
+    except TypeError:
+        try:
+            cb(msg, idx, total)
+        except Exception:
+            pass
+
+
 def scan_and_prepare_photos(
     folder_path: str | Path,
     work_dir: str | Path,
     min_px: int = MIN_ANALYSIS_PX,
     max_px: int = MAX_ANALYSIS_PX,
-    progress_cb: Optional[Callable[[str, int, int], None]] = None,
+    progress_cb: Optional[Callable[..., None]] = None,
 ) -> list[PhotoMetadata]:
     """Scan a folder (and subfolders) for photos (including .HEIC/.HEIF, .JPG, .PNG, .WEBP),
     normalize EXIF orientation, scale to 1,120-2,240px in parallel, and sort chronologically."""
@@ -295,6 +307,7 @@ def scan_and_prepare_photos(
     max_workers = min(8, (os.cpu_count() or 4))
     records: list[PhotoMetadata] = []
     completed = 0
+    recent_scanned_batch: list[dict] = []
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
@@ -306,12 +319,20 @@ def scan_and_prepare_photos(
             rec = fut.result()
             if rec is not None:
                 records.append(rec)
+                recent_scanned_batch.append({
+                    "photo_id": rec.photo_id,
+                    "filename": rec.filename,
+                    "analysis_path": rec.analysis_path,
+                })
             if progress_cb and (completed % 10 == 0 or completed == total):
-                progress_cb(
+                _safe_progress(
+                    progress_cb,
                     f"Scanned & scaled {completed}/{total} photos to 1,120–2,240px ({futures[fut].name})",
                     completed,
                     total,
+                    extra={"scanned_photos": list(recent_scanned_batch)},
                 )
+                recent_scanned_batch.clear()
 
     if not records:
         raise ValueError(f"Could not read any valid photos from {folder}")

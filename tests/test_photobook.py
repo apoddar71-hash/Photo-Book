@@ -665,3 +665,59 @@ def test_remove_curated_and_dates_and_include_location_on_cover(tmp_path: Path) 
     assert detected_loc == "Old San Juan, Puerto Rico"
 
 
+def test_live_engagement_photo_preview_endpoint_and_events(tmp_path: Path) -> None:
+    """Verify the live customer engagement preview endpoint and preview payload formatting."""
+    client = TestClient(app)
+    from app import _PHOTO_CACHE_MAP
+    from photobook.analyzer import _format_photo_preview
+    from photobook.models import GeminiPhotoAnalysis, PhotoMetadata
+
+    img_file = tmp_path / "test_preview.jpg"
+    img = Image.new("RGB", (400, 300), (200, 100, 50))
+    img.save(img_file, format="JPEG")
+
+    p = PhotoMetadata(
+        photo_id="photo_9999_sample",
+        filename="test_preview.jpg",
+        file_path=str(img_file),
+        original_width=400,
+        original_height=300,
+        analysis_width=400,
+        analysis_height=300,
+        analysis_path=str(img_file),
+        captured_at="2026-08-10T14:30:00",
+        captured_timestamp=1700010000.0,
+        dhash="aaaaaaaa00000000",
+        ahash="aaaaaaaa00000000",
+        color_signature=[0.57735, 0.57735, 0.57735],
+        analysis=GeminiPhotoAnalysis(
+            caption="Sunset glowing over golden mountains",
+            aesthetic_score=9.3,
+            location_or_landmark="Rocky Mountains",
+            event_theme="Alpine Expedition",
+            people_count=2,
+        ),
+    )
+
+    # Test preview formatting
+    preview_data = _format_photo_preview(p)
+    assert preview_data["photo_id"] == "photo_9999_sample"
+    assert preview_data["caption"] == "Sunset glowing over golden mountains"
+    assert preview_data["quality_score"] == 9.3
+    assert "Rocky Mountains" in preview_data["tags"] or preview_data["location_or_landmark"] == "Rocky Mountains"
+    assert preview_data["faces_count"] == 2
+
+    # Register in cache map and test /api/photos/preview
+    _PHOTO_CACHE_MAP["photo_9999_sample"] = img_file
+    resp = client.get("/api/photos/preview?id=photo_9999_sample")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/jpeg"
+    assert len(resp.content) > 0
+
+    # Test preview fallback with file query parameter
+    resp_file = client.get(f"/api/photos/preview?file={img_file}")
+    assert resp_file.status_code == 200
+    assert len(resp_file.content) > 0
+
+
+

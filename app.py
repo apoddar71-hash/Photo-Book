@@ -34,6 +34,7 @@ app = FastAPI(
 )
 
 _BOOKS: dict[str, PhotoBookResult] = {}
+_PHOTO_CACHE_MAP: dict[str, Path] = {}
 
 
 class BuildRequest(BaseModel):
@@ -172,8 +173,24 @@ def build_book_stream_endpoint(req: BuildRequest) -> StreamingResponse:
     """Server-Sent Events (SSE) streaming endpoint for real-time progress across 1,000+ photos."""
     q: queue.Queue[dict] = queue.Queue()
 
-    def _progress(msg: str, pct: int, total: int) -> None:
-        q.put({"type": "progress", "message": msg, "percent": pct, "total": total})
+    def _progress(msg: str, pct: int, total: int, extra: Optional[dict] = None) -> None:
+        evt: dict = {"type": "progress", "message": msg, "percent": pct, "total": total}
+        if extra:
+            if "analyzed_photos" in extra:
+                for p in extra["analyzed_photos"]:
+                    pid = p.get("photo_id")
+                    apath = p.get("analysis_path")
+                    if pid and apath:
+                        _PHOTO_CACHE_MAP[pid] = Path(apath)
+                evt["analyzed_photos"] = extra["analyzed_photos"]
+            if "scanned_photos" in extra:
+                for p in extra["scanned_photos"]:
+                    pid = p.get("photo_id")
+                    apath = p.get("analysis_path")
+                    if pid and apath:
+                        _PHOTO_CACHE_MAP[pid] = Path(apath)
+                evt["scanned_photos"] = extra["scanned_photos"]
+        q.put(evt)
 
     def _worker() -> None:
         try:
@@ -213,6 +230,39 @@ def build_book_stream_endpoint(req: BuildRequest) -> StreamingResponse:
                 break
 
     return StreamingResponse(_event_gen(), media_type="text/event-stream")
+
+
+@app.get("/api/photos/preview")
+def preview_photo(id: Optional[str] = None, file: Optional[str] = None) -> FileResponse:
+    target: Optional[Path] = None
+    if id and id in _PHOTO_CACHE_MAP:
+        cand = _PHOTO_CACHE_MAP[id]
+        if cand.exists() and cand.is_file():
+            target = cand
+    if not target and file:
+        try:
+            cand = Path(file).resolve()
+            if cand.exists() and cand.is_file() and cand.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}:
+                target = cand
+        except Exception:
+            pass
+    if not target and id:
+        cache_dir = OUTPUT_ROOT / ".photo_analysis_cache"
+        if cache_dir.exists():
+            for p in cache_dir.glob(f"*{id}*.jpg"):
+                if p.is_file():
+                    target = p
+                    break
+    if not target or not target.exists():
+        raise HTTPException(status_code=404, detail="Preview photo not found")
+
+    return FileResponse(
+        target,
+        media_type="image/jpeg",
+        headers={
+            "Cache-Control": "public, max-age=3600",
+        },
+    )
 
 
 @app.get("/api/books/latest", response_model=PhotoBookResult)

@@ -206,11 +206,45 @@ In earlier iterations, vision API requests ran with a hardcoded worker pool (`ma
 
 ---
 
-## 9. Dashboard & User Interface Enhancements
+## 9. Live Customer Engagement Panel & Real-Time Discovery Feed
+
+### The Problem
+During generation across hundreds of photos (which can take 30–90+ seconds), traditional UIs only show a static percentage progress bar and text log. Customers had no visual feedback on what memories were being explored or how Gemini was interpreting their photos until the entire book finished rendering.
+
+### The Solution
+1. **Live Gemini Vision Discovery Panel**:
+   - Added a prominent live curation card directly below the build controls in [`static/index.html`](../static/index.html).
+   - Features an animated green beacon dot (`pulse-dot`) indicating active real-time AI perception.
+   - Live discovery stats chips:
+     - 📸 **Photos Explored**: Real-time counter of analyzed photos.
+     - 🏛️ **Landmarks Discovered**: Dynamic count of recognized places/landmarks.
+     - ⭐ **Avg Quality**: Live rolling average of aesthetic and composition scores.
+     - 👥 **Portraits Safe**: Live tally of detected human faces safely framed.
+2. **Featured Spotlight Showcase with CSS Flash Animation**:
+   - A dedicated hero card dynamically flashes the newest photo analyzed by Gemini.
+   - Includes a visual flash animation (`spotlight-active-flash`) simulating an optical flash upon analysis.
+   - Displays a floating badge with aesthetic rating and detected setting (e.g. `✨ 9.3 • Sunset`).
+   - Quotes the custom Gemini caption in an elegant serif styling: `“The afternoon sun casting long dramatic shadows across the cobblestones...”`
+   - Highlights metadata tags: Landmark pills, event themes, quality scores, face-safe indicators, and camera models.
+3. **Smooth Rotating Slideshow**:
+   - As parallel batches complete, photos are queued and smoothly cycled every 1.8 seconds so the customer enjoys a non-stop, cinematic preview of their memories being curated.
+4. **Interactive Discovery Filmstrip**:
+   - A horizontal scrolling roll displays the recent 40–50 analyzed photo thumbnails.
+   - Clicking any thumbnail immediately spotlights that photo, updates its caption card, and pauses auto-rotation for 6 seconds.
+5. **Secure Image Preview API (`/api/photos/preview`)**:
+   - Added in [`app.py`](../app.py) to stream lightweight, pre-scaled JPEG previews directly to the browser.
+   - Supported by `_PHOTO_CACHE_MAP` and disk cache fallbacks with HTTP cache headers.
+
+---
+
+## 10. Dashboard & User Interface Enhancements
 
 File: [`static/index.html`](../static/index.html)
 
-1. **Parallel Concurrency Selector**:
+1. **Live Customer Engagement Panel**:
+   - Pulsing live status indicator, featured spotlight card, live captions, metadata tags, and clickable recent discoveries filmstrip.
+   - Includes `Hide / Show Live Feed` toggle button.
+2. **Parallel Concurrency Selector**:
    - Dropdown under Settings:
      - `20 Concurrent Requests (Blazing Fast)`
      - `16 Concurrent Requests (High Speed)`
@@ -218,35 +252,35 @@ File: [`static/index.html`](../static/index.html)
      - `8 Concurrent Requests (Moderate)`
      - `4 Concurrent Requests (Conservative)`
      - `1 Request (Serial / Debug)`
-2. **Batch Size Selector with 10-Photo Preset**:
+3. **Batch Size Selector with 10-Photo Preset**:
    - Added `10 Photos / Call (Ultra Fast)` option alongside `6 Photos / Call (Standard)` and single-photo mode.
-3. **Page Layout Fill Selector**:
+4. **Page Layout Fill Selector**:
    - Dropdown under Settings:
      - `High (Maximum photo coverage, minimal gaps)` *(Default)*
      - `Medium (Balanced spacing)`
      - `Low (Gallery style, wide white margins)`
-4. **Aesthetic Crop Focus Selector**:
+5. **Aesthetic Crop Focus Selector**:
    - Dropdown under Settings:
      - `Tight (Aesthetic close-up, remove dead space)` *(Default)*
      - `Balanced (Standard balanced framing)`
      - `Wide (Maximum environmental context)`
-5. **Photo Captions Selector**:
+6. **Photo Captions Selector**:
    - Dropdown under Settings:
      - `Include Captions (Story & notes under photos)` *(Default)*
      - `No Captions (Clean photo-only gallery)`
-6. **Live Status Badges**:
+7. **Live Status Badges**:
    - Dashboard summary bar displays active configuration pills:
      - `Parallel: <N> reqs (batch <B>)`
      - `Fill: High` / `Fill: Medium` / `Fill: Low`
      - `Crop: Tight` / `Crop: Balanced` / `Crop: Wide`
      - `Captions: Yes` / `Captions: No`
      - `Location: <Recognized Destination>` (when available)
-7. **Interactive 3D Viewer & Controls**:
+8. **Interactive 3D Viewer & Controls**:
    - Integrates with the 3D Lay-Flat viewer, book flipping, and autoplay features.
 
 ---
 
-## 10. API and Data Model Changes
+## 11. API and Data Model Changes
 
 ### `app.py`
 - Updated `/api/build` and `/api/build-stream` endpoints:
@@ -263,16 +297,23 @@ File: [`static/index.html`](../static/index.html)
       include_captions: bool = True      # True = show captions, False = clean gallery
       concurrency: int = 12              # 1 to 32 concurrent vision workers
   ```
+- Added `/api/photos/preview` endpoint for live streaming thumbnails:
+  ```python
+  @app.get("/api/photos/preview")
+  def preview_photo(id: Optional[str] = None, file: Optional[str] = None) -> FileResponse:
+      ...
+  ```
 
 ### `photobook/models.py`
 - Added `page_fill_mode: str = "high"`, `crop_focus: str = "tight"`, `include_captions: bool = True`, `location: Optional[str] = None`, and `concurrency: int = 12` to `PhotoBookResult`.
 
 ### `photobook/pipeline.py`
 - `build_photo_book` accepts `concurrency: int = 12`, passes it to `analyze_photos_with_gemini`, and records it on `PhotoBookResult`.
+- Streams `scanned_photos` and `analyzed_photos` events through `_safe_progress`.
 
 ---
 
-## 11. Test Suite & Verification
+## 12. Test Suite & Verification
 
 All changes are covered by comprehensive automated tests in [`tests/test_photobook.py`](../tests/test_photobook.py):
 
@@ -293,26 +334,30 @@ All changes are covered by comprehensive automated tests in [`tests/test_photobo
    - Confirms dynamic detection and rendering of geographic locations on the cover.
 5. **`test_multi_model_and_batch_processing`**:
    - Verifies batch analysis with custom `concurrency: 16` and confirms result retains configured concurrency metadata.
+6. **`test_live_engagement_photo_preview_endpoint_and_events`**:
+   - Verifies `/api/photos/preview` serves images with HTTP 200 and image/jpeg Content-Type.
+   - Verifies `_format_photo_preview` data structures including captions, landmarks, quality scores, and face counts.
 
 ### Test Execution
 ```bash
 uv run pytest
-# Output: 13 passed in 1.64s
+# Output: 14 passed in 1.73s
 ```
 
 ---
 
-## 12. Summary of Modified Files on `Gemini-first`
+## 13. Summary of Modified Files on `Gemini-first`
 
 | File | Primary Changes |
 |---|---|
-| [`photobook/analyzer.py`](../photobook/analyzer.py) | Added configurable `concurrency` pool, removed blocking serial probe batch, added 429 exponential backoff, added `coarse_filter_photos`, `deduplicate_and_curate_with_gemini`, `extract_book_location`, `strip_curated_and_dates`, `PAGE_TEMPLATES_BY_FILL`, and `get_page_templates`. |
+| [`photobook/analyzer.py`](../photobook/analyzer.py) | Added configurable `concurrency` pool, `_format_photo_preview`, `_safe_progress` streaming, removed blocking serial probe batch, added 429 exponential backoff, added `coarse_filter_photos`, `deduplicate_and_curate_with_gemini`, `extract_book_location`, `strip_curated_and_dates`, `PAGE_TEMPLATES_BY_FILL`, and `get_page_templates`. |
+| [`photobook/ingestion.py`](../photobook/ingestion.py) | Added live scan preview streaming (`scanned_photos`) so photos immediately populate the UI during folder ingestion. |
 | [`photobook/cropper.py`](../photobook/cropper.py) | Added `crop_focus` parameter (`tight`, `balanced`, `wide`) to `compute_aesthetic_crop` with dead-space removal and face preservation. |
-| [`photobook/pipeline.py`](../photobook/pipeline.py) | Orchestrates Smart Hybrid pipeline, extracts location, wires `concurrency` parameter, and threads options through `build_photo_book`. |
+| [`photobook/pipeline.py`](../photobook/pipeline.py) | Orchestrates Smart Hybrid pipeline, extracts location, wires `concurrency` parameter, and threads live event payloads through `_safe_progress`. |
 | [`photobook/models.py`](../photobook/models.py) | Added `page_fill_mode`, `crop_focus`, `include_captions`, `location`, and `concurrency` fields to `PhotoBookResult`. |
-| [`app.py`](../app.py) | Exposed `concurrency`, layout options, and location on REST endpoints. |
-| [`static/index.html`](../static/index.html) | Added parallel concurrency selector (up to 20 workers), 10-photo batch preset, fill mode, crop focus, captions toggle, and live status badges; removed boilerplate text and dates. |
+| [`app.py`](../app.py) | Exposed `/api/photos/preview` endpoint, cached photo mapping in `_PHOTO_CACHE_MAP`, passed live preview payloads in `/api/build-stream`. |
+| [`static/index.html`](../static/index.html) | Added Live Customer Engagement Panel with flashing spotlight photo, AI captions, landmark tags, live stats chips, and recent discoveries filmstrip; added parallel concurrency selector (up to 20 workers), 10-photo batch preset, fill mode, crop focus, captions toggle, and live status badges; removed boilerplate text and dates. |
 | [`photobook/renderer.py`](../photobook/renderer.py) | Purged "CURATED 10x10" and dates from PDF and HTML; displays uppercase location on cover eyebrow and subtitle; logs concurrency in build reports. |
-| [`tests/test_photobook.py`](../tests/test_photobook.py) | Added end-to-end unit tests covering all features, concurrency options, and clean styling assertions. |
+| [`tests/test_photobook.py`](../tests/test_photobook.py) | Added end-to-end unit tests covering all features, concurrency options, clean styling assertions, and live preview endpoints. |
 | [`docs/pipeline_flow.md`](pipeline_flow.md) | Updated pipeline diagram and stage descriptions to reflect the Smart Hybrid model. |
 | [`docs/gemini_first_branch_changes.md`](gemini_first_branch_changes.md) | Master documentation file detailing all branch changes. |
