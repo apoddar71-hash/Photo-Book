@@ -720,4 +720,50 @@ def test_live_engagement_photo_preview_endpoint_and_events(tmp_path: Path) -> No
     assert len(resp_file.content) > 0
 
 
+def test_all_photos_cached_returns_model_tuple(tmp_path: Path) -> None:
+    """Verify that when 100% of photos are already cached, analyze_photos_with_gemini
+    safely returns (resolved_model, model_note) instead of None, preventing unpacking errors."""
+    from photobook.analyzer import analyze_photos_with_gemini
+    from photobook.models import GeminiPhotoAnalysis, PhotoMetadata
+
+    img_file = tmp_path / "cached_sample.jpg"
+    img = Image.new("RGB", (300, 300), (100, 150, 200))
+    img.save(img_file, format="JPEG")
+
+    cache_file = tmp_path / "cached_sample.gemini-3.8-flash.medium.high.json"
+    analysis = GeminiPhotoAnalysis(
+        caption="A serene coastal horizon at sunrise",
+        aesthetic_score=9.1,
+    )
+    cache_file.write_text(analysis.model_dump_json(), encoding="utf-8")
+
+    p = PhotoMetadata(
+        photo_id="photo_cached_01",
+        filename="cached_sample.jpg",
+        file_path=str(img_file),
+        original_width=300,
+        original_height=300,
+        analysis_width=300,
+        analysis_height=300,
+        analysis_path=str(img_file),
+        captured_at="2026-08-10T14:30:00",
+        captured_timestamp=1700010000.0,
+        dhash="aaaaaaaa00000000",
+        ahash="aaaaaaaa00000000",
+        color_signature=[0.57735, 0.57735, 0.57735],
+        analysis=analysis,
+    )
+
+    # Call with effective API key set so it enters cache verification
+    model_used, model_note = analyze_photos_with_gemini(
+        photos=[p],
+        model="gemini-3.8-flash",
+        api_key="mock_key_for_test",
+    )
+    assert model_used == "gemini-3.8-flash"
+    assert model_note is not None
+    assert "cache" in model_note.lower()
+
+
+
 

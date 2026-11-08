@@ -840,6 +840,11 @@ def analyze_photos_with_gemini(
         )
         cached_batch_previews.clear()
 
+    if not remaining_photos:
+        cache_note = f"All {g_total} photos loaded from Gemini analysis cache."
+        model_note = f"{model_note} {cache_note}".strip() if model_note else cache_note
+        return resolved_model, model_note
+
     effective_batch_size = max(1, min(10, int(batch_size or 1)))
     effective_concurrency = max(1, min(32, int(concurrency or 12)))
 
@@ -923,6 +928,8 @@ def analyze_photos_with_gemini(
 
         return resolved_model, model_note
 
+    return resolved_model, model_note
+
     # Single-photo mode (batch_size == 1 or only 1 uncached photo)
     if remaining_photos:
         pool_workers = min(effective_concurrency, len(remaining_photos))
@@ -994,6 +1001,8 @@ def analyze_photos_with_gemini(
             model_note = f"{model_note} {err_msg}".strip() if model_note else err_msg
 
         return resolved_model, model_note
+
+    return resolved_model, model_note
 
 
 def _text_token_jaccard(a: str, b: str) -> float:
