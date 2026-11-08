@@ -1,10 +1,12 @@
-# 10×10 Inch AI Photo Book Builder — End-to-End Pipeline & Architecture Flow
+# 10×10 Inch AI Photo Book Builder — Pipeline Flow (Gemini-First "Smart Hybrid" Branch)
 
-This document explains the complete end-to-end pipeline used by the **10×10 Inch AI Photo Book Builder** ([`photobook/pipeline.py`](../photobook/pipeline.py)), including how a large collection of 700+ raw photos is filtered, ranked, deduplicated, analyzed with **Gemini 3.8 Flash**, curated into chronological story chapters, cropped with 100% face-preservation, and rendered into a print-ready 10×10" PDF and interactive **3D Lay-Flat Flip Viewer**.
+This document describes the **Smart Hybrid (Gemini-First)** pipeline on the `Gemini-first` branch of the **10×10 Inch AI Photo Book Builder** ([`photobook/pipeline.py`](../photobook/pipeline.py)).
+
+In this architecture, **all unique surviving photos go through Gemini 3.8 Flash Vision first** before downsampling or curating to the final book size. This ensures burst selection, aesthetic curation, and chronological downsampling are driven by Gemini's deep semantic understanding (genuine smiles, open eyes, true composition, and landmark importance) rather than crude pixel-edge heuristics.
 
 ---
 
-## High-Level Pipeline Overview
+## High-Level "Smart Hybrid" Pipeline Overview
 
 ```
 Raw Photo Folder (e.g., 700+ .JPG / .HEIC / .PNG / .WEBP files)
@@ -12,20 +14,32 @@ Raw Photo Folder (e.g., 700+ .JPG / .HEIC / .PNG / .WEBP files)
    ├─► Stage 1: Ingestion, EXIF Orientation, Perceptual Hashes & Scaling (All 700+ Photos)
    │            [photobook/ingestion.py :: scan_and_prepare_photos]
    │
-   ├─► Stage 2: Fast Local Pixel-Level Pre-Analysis & Initial Scoring (All 700+ Photos)
-   │            [photobook/analyzer.py :: pre_analyze_all_photos -> _analyze_single_photo_pixels]
+   ├─► Stage 2: Coarse Fast Pruning on Local CPU (<1s, Drops Exact Duplicate Files & Corrupt Receipts)
+   │            [photobook/analyzer.py :: coarse_filter_photos]
+   │            • Drops exact duplicates (dHash==0, aHash==0, color >= 0.998)
+   │            • Drops extreme corrupt/blank frames and clear local receipts
+   │            • DOES NOT compress or downsample to 90 photos here!
    │
-   ├─► Stage 3: Deduplication, Burst Filtering & Chronological Time-Bucket Curation (700+ → 90 Photos)
-   │            [photobook/analyzer.py :: deduplicate_and_filter_photos]
+   ├─► Stage 3: Deep Gemini 3.8 Flash Vision Analysis (ALL Surviving Unique Photos)
+   │            [photobook/analyzer.py :: analyze_photos_with_gemini]
+   │            • Multi-image parallel batches (batch_size=6, 6 parallel workers)
+   │            • Persistent disk caching (.analysis.gemini-3.8-flash.json)
+   │            • Extracts exact face boxes, emotional expressions, aesthetic scores,
+   │              landmarks, sideways orientation, and 1-2 line captions
    │
-   ├─► Stage 4: Deep Gemini 3.8 Flash Vision Analysis & Post-Filtering (Top 90 Curated Photos)
-   │            [photobook/analyzer.py :: analyze_photos_with_gemini + pipeline.py post-filter]
+   ├─► Stage 4: Gemini-Powered Semantic Deduplication & Chronological Curation (e.g., 600 → 90 Photos)
+   │            [photobook/analyzer.py :: deduplicate_and_curate_with_gemini]
+   │            • Filters out Gemini-detected documents, severe flaws, and sideways faces
+   │            • In camera bursts, picks best-expressed shot (smiling vs blinking) using Gemini scores
+   │            • Downsamples across chronological timeline buckets using true Gemini composite quality
    │
-   ├─► Stage 5: Scenic Hero Cover Selection & Single-Photo Precision Refinement
+   ├─► Stage 5: Scenic Hero Cover Selection & Single-Photo Precision Pass
    │            [photobook/analyzer.py :: select_hero_cover_photo]
+   │            • Scenic-first preference (landscape/square panoramic views without portraits)
+   │            • Fallback to highest-rated overall photo if no scenic view exists
    │
    ├─► Stage 6: Chronological Story Clustering & Chapter Titling (Gemini 2.5 Flash-Lite / 3.8 Flash)
-   │            [photobook/analyzer.py :: curate_clusters_and_pages -> _default_clusters_and_pages]
+   │            [photobook/analyzer.py :: curate_clusters_and_pages]
    │
    ├─► Stage 7: 10×10" Page Template Selection & 100% Face-Safe Aesthetic Cropping
    │            [photobook/analyzer.py :: choose_best_page_template + photobook/cropping.py :: compute_aesthetic_crop]
@@ -38,139 +52,82 @@ Raw Photo Folder (e.g., 700+ .JPG / .HEIC / .PNG / .WEBP files)
 
 ## Detailed Stage-by-Stage Breakdown
 
-### Stage 1: Ingestion, EXIF Extraction, Perceptual Hashes & Scaling (All 700+ Photos)
+### Stage 1: Ingestion, EXIF Extraction, Perceptual Hashes & Scaling
 **Entry point:** [`scan_and_prepare_photos`](../photobook/ingestion.py)
 
-Before calling any AI API, every supported image file (`.jpg`, `.jpeg`, `.png`, `.webp`, `.heic`, `.heif`, `.tiff`, `.bmp`) in the input folder is processed in parallel across CPU worker threads:
-
-1. **Strict Input Isolation**:
-   - Reads only image files (ignoring `.txt`, `.md`, `.json`, `.pdf`, or hidden files) so external notes or metadata never pollute the analysis.
-2. **EXIF Capture Timestamp & Camera Metadata**:
-   - Applies `ImageOps.exif_transpose` to honor EXIF rotation tags.
-   - Extracts `DateTimeOriginal` / `DateTime` (`captured_at` and `captured_timestamp`) and camera `Make` / `Model` (`camera_model`).
-3. **Resolution Normalization (`1,120–2,240 px` Default)**:
-   - Scales the longest edge into the target analysis range (default `1,120` to `2,240 px`, or `384–512 px` in `low_384` fast mode) and caches the scaled JPEG under `output/.photo_analysis_cache/`.
-4. **Perceptual Hashes & Color Signatures**:
-   - **`dHash` (64-bit Difference Hash)**: Captures horizontal luminance gradients on a `9×8` grid for structural comparison.
-   - **`aHash` (64-bit Average Hash)**: Captures `8×8` mean luminance structure.
-   - **`color_signature` (24-Bin Normalized RGB Histogram)**: 8 bins per R/G/B channel used to compute cosine color similarity (`0.0` to `1.0`) between frames.
+1. **Strict Personal Photo Ingestion**: Reads only personal image files (`.jpg`, `.jpeg`, `.png`, `.webp`, `.heic`, `.heif`, `.tiff`, `.bmp`), ignoring non-image files.
+2. **EXIF Transposition & Timestamping**: Handles EXIF rotation tags (`ImageOps.exif_transpose`) and parses exact capture timestamps (`DateTimeOriginal`).
+3. **Resolution Normalization**: Pre-scales images into the target vision analysis window (default `1,120` to `2,240 px`).
+4. **Perceptual Signatures**: Computes 64-bit `dHash`, `aHash`, and 24-bin L2-normalized RGB color histogram vectors (`color_signature`).
 
 ---
 
-### Stage 2: Fast Local Pixel-Level Pre-Analysis & Initial Scoring (All 700+ Photos)
-**Entry point:** [`pre_analyze_all_photos`](../photobook/analyzer.py) → [`_analyze_single_photo_pixels`](../photobook/analyzer.py)
+### Stage 2: Coarse Fast Pruning on Local CPU (<1 Second)
+**Entry point:** [`coarse_filter_photos`](../photobook/analyzer.py)
 
-To avoid spending 700+ multimodal API calls on blurry frames, screenshots, or redundant camera bursts, 8 CPU threads perform a fast pixel-level inspection on every scanned photo:
-
-1. **Edge-Gradient Sharpness Score (`sharpness_score`)**:
-   - Computes adjacent pixel luminance differences across a `256×256` grayscale thumbnail and averages the top 8.3% strongest edges (`top_edges`).
-   - Maps to a `2.5–9.8` sharpness scale. Any photo with `sharpness < 3.6` is flagged immediately as motion-blurred or out-of-focus (`is_blurry_or_flawed = True`).
-2. **Pure-Pixel Document & Screenshot Detection (`is_document_or_screenshot`)**:
-   - Flags PNG files lacking camera EXIF (`is_png_without_camera`), filenames matching document/receipt keywords, or bright neutral pages (`avg_brightness > 205`, `color_saturation < 11.0`, `avg_std > 30.0`, and high bimodal text-edge transitions `sharp_text_jumps > 0.045`).
-3. **YCbCr Skin-Tone Head/Face Cluster Detection**:
-   - [`_detect_skin_head_boxes_from_pixels`](../photobook/analyzer.py) scans the upper 70% of the frame in `YCbCr` color space (`Y > 65`, `80 <= Cb <= 124`, `136 <= Cr <= 172`) to detect plausible portrait head clusters and estimate initial `[0..1000]` face bounding boxes.
-4. **Initial Aesthetic, Emotional & Composite Pre-Score**:
-   - Combines sharpness, color saturation (`color_saturation`), luminance dynamic range (`avg_std`), aspect ratio balance, and face presence into an initial `composite_score`:
-     $$\text{composite\_score} = 0.45 \times \text{aesthetic} + 0.30 \times \text{sharpness} + 0.25 \times \text{emotional}$$
+Before dispatching network calls, a lightweight local check prunes redundant work:
+1. **Drops 100% Exact Duplicate Files**: If two files share identical visual hashes (`dHash == 0, aHash == 0, color >= 0.998`), the duplicate is immediately marked `excluded_duplicate`.
+2. **Drops Obvious White Paper Receipts / Extreme Blanks**: Drops non-photo digital graphics, white receipt paper, or unreadable frames (`sharpness < 2.5 and aesthetic < 3.0`).
+3. **Preserves All Legitimate Photos**: Unlike the legacy flow, **no arbitrary downsampling (e.g. to 90 photos) is performed here**. All unique scene and personal photos pass through to Gemini.
 
 ---
 
-### Stage 3: Deduplication, Burst Filtering & Chronological Time-Bucket Curation (700+ → 90 Photos)
-**Entry point:** [`deduplicate_and_filter_photos`](../photobook/analyzer.py)
+### Stage 3: Deep Gemini 3.8 Flash Vision on All Surviving Photos
+**Entry point:** [`analyze_photos_with_gemini`](../photobook/analyzer.py)
 
-This stage narrows a large 700+ photo collection down to the target `max_book_photos` (default `90`) **before** invoking the Gemini Vision API:
-
-1. **Hard Quality & Document Exclusions**:
-   - Excludes all photos flagged in Stage 2 as documents/screenshots (`excluded_document`), blurry/low-sharpness (`sharpness_score < 3.6`, `excluded_low_quality`), or sideways/inverted (`is_sideways_or_inverted_photo`).
-2. **Quality-Ranked Duplicate & Camera-Burst Removal**:
-   - Sorts all surviving candidates from **highest to lowest** `(composite_score, sharpness_score)`.
-   - Iterates down the quality-ranked list and compares each candidate against already-kept higher-scoring photos:
-     - **Exact / Near Duplicate (`excluded_duplicate`)**: `dHash distance == 0`, `aHash distance == 0`, and `color_similarity >= 0.998`.
-     - **Perceptually Similar Shot (`excluded_similar`)**: `dHash <= 6`, `aHash <= 6`, and `color_similarity >= 0.985`.
-     - **Camera Time-Burst Shot (`excluded_similar`)**: Captured within `Δt <= 3.0 minutes` with `color_similarity >= 0.94` and `dHash <= 20`.
-     - **Semantic Burst Shot (`excluded_similar`)**: Captured within `Δt <= 2.0 hours` with `dHash <= 15`, `color_similarity >= 0.965`, and token Jaccard similarity `>= 0.55`.
-   - Because candidates are evaluated in descending quality order, the sharpest, best-composed photo in every burst is automatically kept while lower-rated burst mates are excluded.
-3. **Chronological Time-Bucket Curation to `max_book_photos` (e.g., 90)**:
-   - If more than `max_book_photos` (e.g., 350 unique photos out of 700+) survive deduplication, they are sorted chronologically from the start to the end of the trip.
-   - The timeline is divided into `max_book_photos` (90) equal chronological windows (`bucket_size = len(kept) / 90`).
-   - Within each chronological window, the single photo with the highest `(composite_score, sharpness_score)` is selected (`best_in_window`), and the remaining photos in that window are marked `excluded_similar`.
-   - **Why this works well:** It guarantees that the entire timeline of your trip (beginning, middle, and end) is evenly represented while selecting the sharpest, highest-quality frame from every time segment. *(Setting **Max Curated Photos in Book** to `0` disables this cap and sends all non-duplicate photos to Gemini.)*
+All unique photos from Stage 2 are analyzed by **Gemini 3.8 Flash**:
+1. **Parallel Worker Batches**: Uncached photos are processed in batches of 6 images concurrently across 6 worker threads with live progress reporting.
+2. **Full Semantic Extraction**:
+   - `faces_boxes`: Exact `[0..1000]` bounding boxes for all visible human heads (hair to chin)
+   - `has_sideways_or_inverted_orientation`: Identifies unrotated sideways or upside-down frames
+   - `aesthetic_score`, `emotional_score`, `sharpness_score`, `cover_worthiness_score`
+   - `location_or_landmark`, `event_theme`, `subject_summary`, and a 1–2 line `caption`
+3. **Automatic Caching**: Results are cached on disk (`output/.photo_analysis_cache/`) so re-runs complete in `0ms`.
 
 ---
 
-### Stage 4: Deep Gemini 3.8 Flash Vision Analysis & Post-Filtering (Top 90 Curated Photos)
-**Entry point:** [`analyze_photos_with_gemini`](../photobook/analyzer.py) & post-Gemini filter in [`build_photo_book`](../photobook/pipeline.py)
+### Stage 4: Gemini-Powered Semantic Deduplication & Chronological Curation
+**Entry point:** [`deduplicate_and_curate_with_gemini`](../photobook/analyzer.py)
 
-The curated photos (e.g., 90 photos) are analyzed by **Gemini 3.8 Flash** (`gemini-3.8-flash`):
-
-1. **Persistent Disk Cache**:
-   - Checks `output/.photo_analysis_cache/` for existing `.analysis.<model>.<resolution>.json` files so previously analyzed photos return instantaneously (`0ms`).
-2. **Multi-Image Batch Vision Calls (`batch_size = 6` Default)**:
-   - Groups uncached photos into batches of up to 6 images per request and executes parallel worker calls (`ThreadPoolExecutor(max_workers=6)`, HTTP timeout `88,000 ms`, batch worker timeout `96.0s`).
-   - For each photo, Gemini returns structured JSON ([`GeminiPhotoAnalysis`](../photobook/models.py)):
-     - `is_document_or_screenshot` & `is_blurry_or_flawed`
-     - `has_sideways_or_inverted_orientation` (true if faces or the horizon are rotated 90° sideways or 180° upside down, such as older cameras lacking an EXIF orientation sensor)
-     - `aesthetic_score`, `sharpness_score`, `emotional_score`, `cover_worthiness_score`
-     - `location_or_landmark`, `event_theme`, `subject_summary`, and a 1–2 line `caption` (clamped to `<= 120` chars)
-     - `faces_boxes`: Normalized `[0..1000]` bounding boxes covering every visible human head from the top of the hair/forehead to the chin
-     - `salient_subject_box`: Normalized `[0..1000]` bounding box of the primary visual subject
-3. **Post-Gemini Safety Filter**:
-   - Immediately after Gemini Vision completes, [`build_photo_book`](../photobook/pipeline.py) inspects the updated Gemini analysis and removes any photo newly identified by Gemini as:
-     - a document/screenshot (`is_document_or_screenshot`),
-     - blurry/flawed (`is_blurry_or_flawed`), or
-     - having a sideways or upside-down face/scene orientation ([`is_sideways_or_inverted_photo`](../photobook/analyzer.py)).
+Because Gemini has already analyzed all surviving photos, deduplication and downsampling decisions are now driven by AI:
+1. **Sideways & Quality Purge**: Automatically excludes any photo Gemini flagged with sideways/inverted orientation, documents, or severe flaws.
+2. **Quality-Ranked Burst Selection (Smiling vs. Blinking)**:
+   - Candidates are ranked by Gemini's multimodal composite score.
+   - In rapid bursts (`Δt <= 3.0 min`, `color_sim >= 0.94`, `d_dist <= 20`), the photo where people have the best expression and highest emotional/aesthetic score is kept, while inferior burst mates are excluded.
+3. **Chronological Bucket Downsampling to `max_book_photos`**:
+   - If more photos remain than `max_book_photos` (e.g. 90), the chronological timeline is divided into 90 equal windows.
+   - In each window, the photo with the highest Gemini score is selected, guaranteeing uniform trip coverage with the absolute highest-quality frames.
 
 ---
 
-### Stage 5: Scenic Hero Cover Selection & Single-Photo Precision Refinement
-**Entry point:** [`select_hero_cover_photo`](../photobook/analyzer.py) & [`curate_clusters_and_pages`](../photobook/analyzer.py)
+### Stage 5: Scenic Hero Cover Selection & Precision Pass
+**Entry point:** [`select_hero_cover_photo`](../photobook/analyzer.py)
 
-1. **Scenic-First Hero Cover Selection**:
-   - [`select_hero_cover_photo`](../photobook/analyzer.py) gives priority to **scenic landscape/square views** (`people_count == 0`, `len(faces_boxes) == 0`, `cover_worthiness_score >= 6.8`, `aesthetic_score >= 7.0`, balanced aspect ratio `0.70–2.15`, and no indoor/tabletop object keywords).
-   - Scenic candidates are ranked by `cover_worthiness_score + 0.55 (landscape/square bonus)`, `aesthetic_score`, and `sharpness_score`.
-   - **Fallback**: If no qualifying scenic view exists in the collection, it automatically falls back to the highest-rated overall photo (`cover_worthiness_score`, `composite_score`, `sharpness_score`).
-2. **Hero Cover Single-Photo Precision Pass (`hero_model = gemini-3.8-flash`)**:
-   - When `batch_size > 1`, the winning Hero Cover photo is sent in a dedicated single-image, high-resolution (`media_resolution="high"`, `thinking_level="medium"`, timeout `72,000 ms`) call to `gemini-3.8-flash` for ultra-precise cropping coordinates and cover captioning.
+1. Prioritizes sweeping scenic landscape/square views (`cover_worthiness >= 6.8`, `aesthetic >= 7.0`, `people_count == 0`).
+2. Automatically falls back to the best overall photo if no qualifying scenic view exists.
+3. Runs a dedicated high-resolution precision pass on the selected cover image for perfect cropping.
 
 ---
 
-### Stage 6: Chronological Story Clustering & Chapter Titling
-**Entry point:** [`_default_clusters_and_pages`](../photobook/analyzer.py) & Stage 2 Curation in [`curate_clusters_and_pages`](../photobook/analyzer.py)
+### Stage 6: Story Clustering & Chapter Titling
+**Entry point:** [`curate_clusters_and_pages`](../photobook/analyzer.py)
 
-1. **Deterministic Chronological Day/Theme Grouping**:
-   - Groups selected photos in strict chronological order by capture date and visual theme (`event_theme` and `location_or_landmark`).
-   - Synthesizes initial chapter titles and 1–2 line group captions.
-2. **Fast LLM Book Title & Chapter Refinement (`curation_model = gemini-2.5-flash-lite`)**:
-   - Sends a compact JSON summary of each cluster's date range, landmarks, themes, and sample captions to `gemini-2.5-flash-lite` (`thinking_budget=0`, timeout `40,000 ms`) or `gemini-3.8-flash` to generate a cohesive `book_title` and polished chapter `title` + `group_caption` for every chapter.
+Groups photos into chronological days and themes, and uses `gemini-2.5-flash-lite` or `gemini-3.8-flash` to craft cohesive chapter titles and warm 1–2 line group captions.
 
 ---
 
-### Stage 7: 10×10" Page Template Selection & 100% Face-Safe Aesthetic Cropping
+### Stage 7: 10×10" Layout & 100% Face-Safe Cropping
 **Entry point:** [`choose_best_page_template`](../photobook/analyzer.py) & [`compute_aesthetic_crop`](../photobook/cropping.py)
 
-1. **1 to 3 Photos Max per 10×10" Page**:
-   - Each interior page holds **1, 2, or 3 photos maximum** across 11 editorial 10×10" templates (`PAGE_TEMPLATES` in [`photobook/analyzer.py`](../photobook/analyzer.py)):
-     - **Cover (`cover_hero`)**: 1 hero slot (`7.8" × 5.85"` at `x=1.1", y=1.65"`).
-     - **1-Photo Pages**: `single_full_square`, `single_editorial` (portrait), `single_panoramic` (wide landscape).
-     - **2-Photo Pages**: `two_side_by_side`, `two_stacked_horizontal`, `two_asymmetric_left`, `two_asymmetric_right`.
-     - **3-Photo Pages**: `three_hero_top`, `three_hero_left`, `three_columns`.
-   - All template slot coordinates are positioned to guarantee zero overlap with top chapter headers, outer trim borders (`inset: 3.2%`), two-line individual slot subcaptions, and bottom group captions.
-2. **100% Face-Preserving Aesthetic Crop (`compute_aesthetic_crop`)**:
-   - Computes the union of all detected `faces_boxes` in pixel coordinates with a **12% safety margin above the head/forehead** (`pad_top = 0.12 * box_h`) and **8% margin below the chin and on the sides**.
-   - Searches for the largest crop window matching the target slot aspect ratio centered on the salient subject while **strictly enclosing 100% of the padded face union**.
-   - **Automatic Template Backoff (`_can_page_preserve_all_faces`)**: If a multi-photo template's slot aspect ratio is too narrow/wide to fit every face in a group photo without clipping, the layout engine automatically steps down from 3 photos → 2 photos → 1 photo on that page so no face is ever cut off.
-   - Crops are rendered in parallel at print resolution (`200 DPI`) into `output/<book_id>/crops/`.
+1. Dynamically assigns 1, 2, or 3 photos per 10×10" page across 11 balanced templates with generous text padding and no overlap.
+2. Applies face-safe bounding-box preservation with a 12% safety margin above foreheads and automatic fallback to fewer photos per page if a slot aspect ratio would cut off a face.
 
 ---
 
-### Stage 8: Output Rendering (10×10" Print PDF, 3D Lay-Flat HTML Book & Analysis Reports)
-**Entry point:** [`photobook/renderer.py`](../photobook/renderer.py) & [`static/index.html`](../static/index.html)
+### Stage 8: Output Rendering
+**Entry point:** [`photobook/renderer.py`](../photobook/renderer.py)
 
-1. **10×10 Inch Print-Ready PDF (`photobook_10x10.pdf`)**:
-   - Rendered via ReportLab (`720 × 720 pt`) in [`render_pdf_photobook`](../photobook/renderer.py) with dark charcoal & gold-bordered Hero Cover, warm cream interior pages (`#FAF7F2`), chapter headers, white photo frames, individual 2-line captions, group captions, and page numbers.
-2. **Standalone 10×10" Lay-Flat HTML Photo Book (`photobook.html`)**:
-   - Rendered in [`render_html_photobook`](../photobook/renderer.py) with self-contained Base64-embedded crops, **180° Lay-Flat 2-Page Spreads** (1px micro-fold seam, zero spine gutter shadow, continuous perimeter trim border), interactive **✨ 3D Lay-Flat Flip Viewer**, and **▶ Autoplay** controls.
-3. **Interactive Web UI (`http://127.0.0.1:8088`)**:
-   - Served by [`app.py`](../app.py) and [`static/index.html`](../static/index.html) with live SSE progress streaming, elapsed timer, stage-by-stage timing breakdown, **✨ 3D Lay-Flat Flip Viewer** (rigid board 3D page turn animation + mouse-hover 3D tilt), **▶ Autoplay** with adjustable speed (`2.5s` to `8.5s` per spread), Face-Safe Crop & Slot Inspector overlays, and full inclusion/exclusion audit tables.
-4. **Structured Analysis Reports (`photo_analysis.json` & `photo_analysis.md`)**:
-   - Saved by [`save_analysis_files`](../photobook/renderer.py) with every scanned photo's scores, face counts, capture timestamps, and exact exclusion reasons.
+Generates:
+1. Print-ready `photobook_10x10.pdf` (ReportLab 720×720 pt)
+2. Standalone `photobook.html` with **180° Lay-Flat 2-Page Spreads**, **✨ 3D Lay-Flat Flip Viewer**, and **▶ Autoplay**
+3. `photo_analysis.json` and human-readable `photo_analysis.md` audit logs

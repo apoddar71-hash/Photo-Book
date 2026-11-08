@@ -955,14 +955,73 @@ def is_sideways_or_inverted_photo(photo: PhotoMetadata) -> tuple[bool, Optional[
     return False, None
 
 
-def deduplicate_and_filter_photos(
+def coarse_filter_photos(
+    photos: list[PhotoMetadata],
+    exact_hamming_threshold: int = 0,
+    exact_color_threshold: float = 0.998,
+) -> list[PhotoMetadata]:
+    """Stage 2 in Smart Hybrid (Gemini-First) flow: Fast coarse pruning on local CPU (<1 second).
+    Drops exact duplicate files (identical dHash/aHash/bytes) and obvious document/receipt files
+    so Gemini API calls are not wasted, but preserves ALL unique scene and personal photos for deep Gemini analysis.
+    Crucially: DOES NOT downsample by max_book_photos here; downsampling happens AFTER Gemini analyzes all photos.
+    """
+    candidates: list[PhotoMetadata] = []
+    for p in photos:
+        if p.analysis.is_document_or_screenshot:
+            p.status = "excluded_document"
+            p.exclusion_reason = p.analysis.document_reason or "Detected document, receipt, or screenshot (coarse pre-filter)"
+            continue
+        if p.analysis.sharpness_score < 2.5 and p.analysis.aesthetic_score < 3.0:
+            p.status = "excluded_low_quality"
+            p.exclusion_reason = f"Extreme technical blur or corrupt frame (sharpness {p.analysis.sharpness_score}/10)"
+            continue
+        candidates.append(p)
+
+    # Rank by quality so if an exact duplicate exists, the higher-quality file is retained
+    ranked = sorted(
+        candidates,
+        key=lambda x: (x.analysis.composite_score, x.analysis.sharpness_score, -x.captured_timestamp),
+        reverse=True,
+    )
+
+    kept: list[PhotoMetadata] = []
+    for cand in ranked:
+        matched_keeper: Optional[PhotoMetadata] = None
+        for keeper in kept:
+            d_dist = hamming_distance(cand.dhash, keeper.dhash)
+            a_dist = hamming_distance(cand.ahash, keeper.ahash)
+            color_sim = cosine_similarity(cand.color_signature, keeper.color_signature)
+
+            if d_dist <= exact_hamming_threshold and a_dist <= exact_hamming_threshold and color_sim >= exact_color_threshold:
+                matched_keeper = keeper
+                break
+
+        if matched_keeper:
+            cand.status = "excluded_duplicate"
+            cand.duplicate_of = matched_keeper.photo_id
+            cand.exclusion_reason = (
+                f"Exact duplicate file of {matched_keeper.filename} (dHash distance={d_dist}, "
+                f"color similarity={color_sim:.3f})"
+            )
+        else:
+            cand.status = "selected"
+            kept.append(cand)
+
+    kept.sort(key=lambda r: (r.captured_timestamp, r.filename))
+    return kept
+
+
+def deduplicate_and_curate_with_gemini(
     photos: list[PhotoMetadata],
     duplicate_hamming_threshold: int = 6,
     similar_hamming_threshold: int = 15,
     similar_color_threshold: float = 0.965,
     max_book_photos: int = 90,
 ) -> list[PhotoMetadata]:
-    """Remove documents/screenshots, blurry frames, sideways/inverted face photos, exact duplicates, and similar burst shots."""
+    """Stage 4 in Smart Hybrid (Gemini-First) flow: Semantic Deduplication, Burst Curation & Timeline Bucket Selection.
+    Runs AFTER all surviving photos have been deeply analyzed by Gemini 3.8 Flash, leveraging Gemini's real
+    facial expression awareness, true aesthetic scores, landmark recognition, and sideways orientation detection.
+    """
     candidates: list[PhotoMetadata] = []
     for p in photos:
         if p.analysis.is_document_or_screenshot:
@@ -980,9 +1039,15 @@ def deduplicate_and_filter_photos(
             continue
         candidates.append(p)
 
+    # Rank using Gemini's multimodal scores (aesthetic, composite, and sharpness)
     ranked = sorted(
         candidates,
-        key=lambda x: (x.analysis.composite_score, x.analysis.sharpness_score, -x.captured_timestamp),
+        key=lambda x: (
+            x.analysis.composite_score,
+            x.analysis.aesthetic_score,
+            x.analysis.sharpness_score,
+            -x.captured_timestamp,
+        ),
         reverse=True,
     )
 
@@ -1018,14 +1083,15 @@ def deduplicate_and_filter_photos(
                 time_diff_hours <= 2.0
                 and d_dist <= similar_hamming_threshold
                 and color_sim >= similar_color_threshold
-                and _text_token_jaccard(cand.analysis.subject_summary, keeper.analysis.subject_summary) >= 0.55
+                and _text_token_jaccard(cand.analysis.subject_summary, keeper.analysis.subject_summary) >= 0.45
             )
             if is_perceptually_similar or is_time_burst or is_semantic_burst:
                 matched_keeper = keeper
                 match_kind = "excluded_similar"
                 match_reason = (
                     f"Similar burst shot to {keeper.filename} (dHash={d_dist}, "
-                    f"color similarity={color_sim:.2f}, Δt={time_diff_minutes:.1f}m; kept higher-rated {keeper.filename})"
+                    f"color similarity={color_sim:.2f}, Δt={time_diff_minutes:.1f}m; kept higher-rated {keeper.filename} "
+                    f"with Gemini score {keeper.analysis.composite_score} vs {cand.analysis.composite_score})"
                 )
                 break
 
@@ -1048,7 +1114,14 @@ def deduplicate_and_filter_photos(
             window = kept[start_i : max(start_i + 1, end_i)]
             if not window:
                 continue
-            best_in_window = max(window, key=lambda x: (x.analysis.composite_score, x.analysis.sharpness_score))
+            best_in_window = max(
+                window,
+                key=lambda x: (
+                    x.analysis.composite_score,
+                    x.analysis.cover_worthiness_score,
+                    x.analysis.sharpness_score,
+                ),
+            )
             final_kept.append(best_in_window)
             for other in window:
                 if other.photo_id != best_in_window.photo_id:
@@ -1056,12 +1129,29 @@ def deduplicate_and_filter_photos(
                     other.duplicate_of = best_in_window.photo_id
                     other.exclusion_reason = (
                         f"Curated out in chronological time-cluster in favor of higher-rated {best_in_window.filename} "
-                        f"({best_in_window.analysis.composite_score} vs {other.analysis.composite_score})"
+                        f"(Gemini score {best_in_window.analysis.composite_score} vs {other.analysis.composite_score})"
                     )
         kept = final_kept
 
     kept.sort(key=lambda r: (r.captured_timestamp, r.filename))
     return kept
+
+
+def deduplicate_and_filter_photos(
+    photos: list[PhotoMetadata],
+    duplicate_hamming_threshold: int = 6,
+    similar_hamming_threshold: int = 15,
+    similar_color_threshold: float = 0.965,
+    max_book_photos: int = 90,
+) -> list[PhotoMetadata]:
+    """Compatibility alias for deduplicate_and_curate_with_gemini."""
+    return deduplicate_and_curate_with_gemini(
+        photos=photos,
+        duplicate_hamming_threshold=duplicate_hamming_threshold,
+        similar_hamming_threshold=similar_hamming_threshold,
+        similar_color_threshold=similar_color_threshold,
+        max_book_photos=max_book_photos,
+    )
 
 
 # ── 10x10 Inch Page Templates & Slot Geometries ──────────────────────────────

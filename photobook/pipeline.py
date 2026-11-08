@@ -11,7 +11,9 @@ from typing import Callable, Optional
 from photobook.analyzer import (
     DEFAULT_MODEL,
     analyze_photos_with_gemini,
+    coarse_filter_photos,
     curate_clusters_and_pages,
+    deduplicate_and_curate_with_gemini,
     deduplicate_and_filter_photos,
     is_sideways_or_inverted_photo,
     pre_analyze_all_photos,
@@ -78,33 +80,33 @@ def build_photo_book(
 
     def _pre_progress(msg: str, idx: int, total: int) -> None:
         if progress_cb:
-            pct = 30 + int(round((idx / max(1, total)) * 20))
-            progress_cb(f"Step 2/5: {msg}", pct, 100)
+            pct = 22 + int(round((idx / max(1, total)) * 10))
+            progress_cb(f"Step 2/5 (Coarse Local Prune): {msg}", pct, 100)
 
     t1 = time.perf_counter()
     pre_analyze_all_photos(
         photos=photos,
         progress_cb=_pre_progress,
     )
+    # Stage 2: Coarse Fast Pruning (drops exact duplicate files and clear receipts, keeps all unique photos for Gemini)
+    coarse_survivors = coarse_filter_photos(photos)
+    stage_timings["coarse_filter_s"] = round(time.perf_counter() - t1, 2)
 
     if progress_cb:
         progress_cb(
-            f"Step 3/5: Removing duplicates, similar bursts & documents across {len(photos)} photos...",
-            52,
+            f"Step 3/5: Deep Gemini 3.8 Flash analysis on all {len(coarse_survivors)} surviving photos...",
+            32,
             100,
         )
 
-    selected = deduplicate_and_filter_photos(photos, max_book_photos=max_book_photos)
-    stage_timings["dedup_s"] = round(time.perf_counter() - t1, 2)
-
     def _gemini_progress(msg: str, idx: int, total: int) -> None:
         if progress_cb:
-            pct = 55 + int(round((idx / max(1, total)) * 22))
-            progress_cb(f"Step 3/5: {msg}", pct, 100)
+            pct = 32 + int(round((idx / max(1, total)) * 38))
+            progress_cb(f"Step 3/5 (Gemini-First Vision): {msg}", pct, 100)
 
     t2 = time.perf_counter()
     model_used, model_note = analyze_photos_with_gemini(
-        photos=selected,
+        photos=coarse_survivors,
         model=model,
         thinking_level=thinking_level,
         media_resolution=media_resolution,
@@ -114,31 +116,28 @@ def build_photo_book(
     )
     stage_timings["vision_s"] = round(time.perf_counter() - t2, 2)
 
-    # Filter out any photos newly marked as documents, blurry, or sideways/inverted by Gemini
-    post_selected = []
-    for p in selected:
-        is_sideways, sideways_reason = is_sideways_or_inverted_photo(p)
-        if p.analysis.is_document_or_screenshot:
-            p.status = "excluded_document"
-            p.exclusion_reason = p.analysis.document_reason or "Detected document, receipt, or screenshot"
-        elif p.analysis.is_blurry_or_flawed:
-            p.status = "excluded_low_quality"
-            p.exclusion_reason = f"Low technical quality or motion blur (sharpness {p.analysis.sharpness_score}/10)"
-        elif is_sideways:
-            p.status = "excluded_low_quality"
-            p.exclusion_reason = sideways_reason or "Sideways or inverted face/scene orientation"
-        else:
-            post_selected.append(p)
-    selected = post_selected
-
     if progress_cb:
         progress_cb(
-            f"Step 4/5: Clustering {len(selected)} photos ({curation_model}), refining Hero cover ({hero_model}) & face-safe cropping...",
-            80,
+            f"Step 4/5: Gemini-powered semantic burst curation & selection ({len(coarse_survivors)} → max {max_book_photos or 'all'})...",
+            72,
             100,
         )
 
     t3 = time.perf_counter()
+    selected = deduplicate_and_curate_with_gemini(
+        photos=coarse_survivors,
+        max_book_photos=max_book_photos,
+    )
+    stage_timings["dedup_s"] = round(time.perf_counter() - t3, 2)
+
+    if progress_cb:
+        progress_cb(
+            f"Step 5/5: Clustering {len(selected)} photos ({curation_model}), refining Hero cover ({hero_model}) & face-safe cropping...",
+            84,
+            100,
+        )
+
+    t4 = time.perf_counter()
     title, subtitle, hero_id, clusters, pages = curate_clusters_and_pages(
         selected_photos=selected,
         work_dir=book_dir,
@@ -150,7 +149,7 @@ def build_photo_book(
         batch_size=batch_size,
         api_key=api_key,
     )
-    stage_timings["curation_layout_s"] = round(time.perf_counter() - t3, 2)
+    stage_timings["curation_layout_s"] = round(time.perf_counter() - t4, 2)
 
     analysis_json_path = book_dir / "photo_analysis.json"
     analysis_md_path = book_dir / "photo_analysis.md"

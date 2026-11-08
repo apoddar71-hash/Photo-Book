@@ -24,7 +24,12 @@ from fastapi.testclient import TestClient
 from PIL import Image, ImageDraw
 
 from app import app
-from photobook.analyzer import clamp_caption_two_lines, resolve_gemini_model
+from photobook.analyzer import (
+    clamp_caption_two_lines,
+    coarse_filter_photos,
+    deduplicate_and_curate_with_gemini,
+    resolve_gemini_model,
+)
 from photobook.cropper import compute_aesthetic_crop, verify_faces_preserved
 from photobook.ingestion import MAX_ANALYSIS_PX, MIN_ANALYSIS_PX, scale_to_analysis_resolution
 from photobook.models import BoundingBox, GeminiPhotoAnalysis
@@ -411,3 +416,107 @@ def test_hero_cover_prefers_scenic_and_excludes_sideways_faces():
     # Fallback: when no scenic photo is available, chooses best portrait
     hero_fallback = select_hero_cover_photo([portrait_photo])
     assert hero_fallback.photo_id == "p_portrait"
+
+
+def test_smart_hybrid_gemini_first_flow() -> None:
+    """Verify the Gemini-first Smart Hybrid flow:
+    1. Coarse local filter drops exact file duplicates, but passes burst variations through to Gemini.
+    2. Deep Gemini vision analyses all coarse survivors.
+    3. Gemini-powered deduplication picks the best shot (e.g., smiling vs blinking) using Gemini scores,
+       and curates to max_book_photos using Gemini composite quality.
+    """
+    from photobook.models import PhotoMetadata
+
+    # Photo A: Burst shot 1 - Awkward blink, high local edge sharpness from hair
+    p_blink = PhotoMetadata(
+        photo_id="burst_01",
+        filename="burst_01.jpg",
+        file_path="/tmp/burst_01.jpg",
+        original_width=1600,
+        original_height=1200,
+        analysis_width=1600,
+        analysis_height=1200,
+        analysis_path="/tmp/burst_01.jpg",
+        captured_at="2026-08-10T14:30:00",
+        captured_timestamp=1700010000.0,
+        dhash="aaaaaaaa00000000",
+        ahash="aaaaaaaa00000000",
+        color_signature=[0.57735, 0.57735, 0.57735],
+        analysis=GeminiPhotoAnalysis(
+            aesthetic_score=5.5,
+            sharpness_score=8.5,  # high sharpness, but bad expression
+            emotional_score=4.0,
+            cover_worthiness_score=4.5,
+            subject_summary="Woman with eyes closed mid-blink on balcony",
+            caption="Mid-blink on the sunny balcony.",
+            people_count=1,
+            faces_boxes=[BoundingBox(ymin=200, xmin=300, ymax=500, xmax=600, label="face")],
+        ),
+    )
+
+    # Photo B: Burst shot 2 (30s later) - Warm natural smile, lower edge contrast
+    p_smile = PhotoMetadata(
+        photo_id="burst_02",
+        filename="burst_02.jpg",
+        file_path="/tmp/burst_02.jpg",
+        original_width=1600,
+        original_height=1200,
+        analysis_width=1600,
+        analysis_height=1200,
+        analysis_path="/tmp/burst_02.jpg",
+        captured_at="2026-08-10T14:30:30",
+        captured_timestamp=1700010030.0,
+        dhash="aaaaaaaa00000002",
+        ahash="aaaaaaaa00000002",
+        color_signature=[0.57735, 0.57735, 0.57735],
+        analysis=GeminiPhotoAnalysis(
+            aesthetic_score=8.8,
+            sharpness_score=7.6,
+            emotional_score=9.2,
+            cover_worthiness_score=8.5,
+            subject_summary="Woman smiling warmly looking at camera on sunlit balcony",
+            caption="Smiling warmly on the sunlit balcony.",
+            people_count=1,
+            faces_boxes=[BoundingBox(ymin=200, xmin=300, ymax=500, xmax=600, label="face")],
+        ),
+    )
+
+    # Photo C: Exact byte/hash duplicate of Photo A
+    p_exact_dup = PhotoMetadata(
+        photo_id="burst_01_copy",
+        filename="burst_01_copy.jpg",
+        file_path="/tmp/burst_01_copy.jpg",
+        original_width=1600,
+        original_height=1200,
+        analysis_width=1600,
+        analysis_height=1200,
+        analysis_path="/tmp/burst_01_copy.jpg",
+        captured_at="2026-08-10T14:30:00",
+        captured_timestamp=1700010000.0,
+        dhash="aaaaaaaa00000000",
+        ahash="aaaaaaaa00000000",
+        color_signature=[0.57735, 0.57735, 0.57735],
+        analysis=GeminiPhotoAnalysis(
+            aesthetic_score=5.5,
+            sharpness_score=8.5,
+            emotional_score=4.0,
+            cover_worthiness_score=4.5,
+            subject_summary="Woman with eyes closed mid-blink on balcony",
+            caption="Mid-blink on the sunny balcony.",
+            people_count=1,
+            faces_boxes=[],
+        ),
+    )
+
+    # 1. Coarse filtering drops the exact duplicate, but keeps both burst shots for Gemini!
+    coarse = coarse_filter_photos([p_blink, p_smile, p_exact_dup])
+    assert len(coarse) == 2
+    assert p_exact_dup.status == "excluded_duplicate"
+    assert {p.photo_id for p in coarse} == {"burst_01", "burst_02"}
+
+    # 2. Gemini-powered deduplication picks the smiling photo (burst_02) over the blinking photo (burst_01)
+    curated = deduplicate_and_curate_with_gemini(coarse, max_book_photos=1)
+    assert len(curated) == 1
+    assert curated[0].photo_id == "burst_02"
+    assert p_blink.status == "excluded_similar"
+    assert p_blink.duplicate_of == "burst_02"
