@@ -56,7 +56,13 @@ class BuildRequest(BaseModel):
         default=6,
         ge=1,
         le=10,
-        description="Number of photos sent per single vision API call (1 = single-photo mode, 4-8 = fast batch mode)",
+        description="Number of photos sent per single vision API call (1 = single-photo mode, 4-10 = fast batch mode)",
+    )
+    concurrency: int = Field(
+        default=12,
+        ge=1,
+        le=32,
+        description="Number of parallel vision API requests executed concurrently (e.g. 8, 12, 16, 24)",
     )
     media_resolution: str = Field(
         default="high",
@@ -141,6 +147,7 @@ def build_book_endpoint(req: BuildRequest) -> PhotoBookResult:
             hero_model=req.hero_model,
             layout_model=req.layout_model,
             batch_size=req.batch_size,
+            concurrency=req.concurrency,
             media_resolution=req.media_resolution,
             min_analysis_px=req.min_analysis_px,
             max_analysis_px=req.max_analysis_px,
@@ -180,6 +187,7 @@ def build_book_stream_endpoint(req: BuildRequest) -> StreamingResponse:
                 hero_model=req.hero_model,
                 layout_model=req.layout_model,
                 batch_size=req.batch_size,
+                concurrency=req.concurrency,
                 media_resolution=req.media_resolution,
                 min_analysis_px=req.min_analysis_px,
                 max_analysis_px=req.max_analysis_px,

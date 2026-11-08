@@ -32,6 +32,7 @@ def build_photo_book(
     hero_model: str = "gemini-3.8-flash",
     layout_model: str = "local_geometric",
     batch_size: int = 6,
+    concurrency: int = 12,
     media_resolution: str = "high",
     min_analysis_px: int = MIN_ANALYSIS_PX,
     max_analysis_px: int = MAX_ANALYSIS_PX,
@@ -114,6 +115,7 @@ def build_photo_book(
         thinking_level=thinking_level,
         media_resolution=media_resolution,
         batch_size=batch_size,
+        concurrency=concurrency,
         api_key=api_key,
         progress_cb=_gemini_progress,
     )
@@ -173,6 +175,7 @@ def build_photo_book(
         hero_model_used=hero_model,
         layout_model_used=layout_model,
         batch_size=batch_size,
+        concurrency=concurrency,
         build_duration_seconds=round(time.perf_counter() - t_start, 2),
         stage_timings=stage_timings,
         model_note=model_note,

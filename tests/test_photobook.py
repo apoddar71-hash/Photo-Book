@@ -310,6 +310,7 @@ def test_multi_model_and_batch_processing(tmp_path: Path):
             "curation_model": "gemini-2.5-flash-lite",
             "hero_model": "none",
             "batch_size": 8,
+            "concurrency": 16,
             "media_resolution": "low",
             "min_analysis_px": 512,
             "max_analysis_px": 768,
@@ -320,6 +321,7 @@ def test_multi_model_and_batch_processing(tmp_path: Path):
     assert book_data["curation_model_used"] == "gemini-2.5-flash-lite"
     assert book_data["hero_model_used"] == "none"
     assert book_data["batch_size"] == 8
+    assert book_data["concurrency"] == 16
     assert book_data["total_selected"] == 4
 
 

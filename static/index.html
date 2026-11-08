@@ -702,17 +702,29 @@
           </select>
         </div>
         <div>
+          <label for="concurrencySelect">Parallel Concurrency (Speed)</label>
+          <select id="concurrencySelect">
+            <option value="20">⚡ 20 Parallel Requests (Maximum Speed)</option>
+            <option value="16">⚡ 16 Parallel Requests (High Speed)</option>
+            <option value="12" selected>⚡ 12 Parallel Requests (Fast • Default)</option>
+            <option value="8">⚡ 8 Parallel Requests (Balanced)</option>
+            <option value="4">4 Parallel Requests (Conservative)</option>
+            <option value="1">1 Sequential Request</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row-2">
+        <div>
           <label for="batchSizeSelect">Vision Batch Processing</label>
           <select id="batchSizeSelect">
+            <option value="10">⚡ Batch of 10 Photos / Call (Ultra Fast)</option>
             <option value="8">⚡ Batch of 8 Photos / Call (Fastest)</option>
             <option value="6" selected>⚡ Batch of 6 Photos / Call (Default)</option>
             <option value="4">⚡ Batch of 4 Photos / Call</option>
             <option value="1">Single Photo Mode (1 / Call)</option>
           </select>
         </div>
-      </div>
-
-      <div class="row-2">
         <div>
           <label for="resSelect">Photo Resolution</label>
           <select id="resSelect">
@@ -723,6 +735,7 @@
             <option value="ultra_high">Ultra High (1,680–2,240 px • 2,240 tokens)</option>
           </select>
         </div>
+      </div>
         <div>
           <label for="maxPhotosSelect">Max Book Photos</label>
           <select id="maxPhotosSelect">
@@ -954,6 +967,7 @@
         hero_model: document.getElementById('heroModelSelect').value,
         layout_model: document.getElementById('layoutModelSelect').value,
         batch_size: parseInt(document.getElementById('batchSizeSelect').value, 10),
+        concurrency: parseInt(document.getElementById('concurrencySelect').value, 10),
         media_resolution: resMode,
         min_analysis_px: minPx,
         max_analysis_px: maxPx,
@@ -1020,7 +1034,7 @@
     const durVal = book.build_duration_seconds ? `${book.build_duration_seconds}s` : 'Cached';
     document.getElementById('timeHeaderBadge').textContent = `⏱️ Total Time: ${durVal}`;
     document.getElementById('modelHeaderTag').textContent =
-      `Vision: ${book.model_used} (batch=${book.batch_size || 1}) • Curation: ${book.curation_model_used || 'gemini-2.5-flash-lite'} • Hero: ${book.hero_model_used || 'gemini-3.8-flash'} • Layout: ${book.layout_model_used || 'local_geometric'}`;
+      `Vision: ${book.model_used} (batch=${book.batch_size || 1}, parallel=${book.concurrency || 12}) • Curation: ${book.curation_model_used || 'gemini-2.5-flash-lite'} • Hero: ${book.hero_model_used || 'gemini-3.8-flash'} • Layout: ${book.layout_model_used || 'local_geometric'}`;
 
     const st = book.stage_timings || {};
     const stageBreakdown = Object.keys(st).length
@@ -1035,6 +1049,7 @@
       <div class="stat-pill"><b>${book.total_excluded_similar}</b> Similar Burst Removed</div>
       <div class="stat-pill"><b>${book.total_excluded_documents}</b> Documents Removed</div>
       <div class="stat-pill"><b>${book.pages.length}</b> 10×10" Pages</div>
+      <div class="stat-pill"><b>Parallel:</b> ${book.concurrency || 12} reqs (batch ${book.batch_size || 6})</div>
       <div class="stat-pill"><b>Fill:</b> ${escapeHtml(book.page_fill_mode || 'high')}</div>
       <div class="stat-pill"><b>Crop:</b> ${escapeHtml(book.crop_focus || 'tight')}</div>
       <div class="stat-pill"><b>Captions:</b> ${book.include_captions !== false ? 'Yes' : 'No'}</div>

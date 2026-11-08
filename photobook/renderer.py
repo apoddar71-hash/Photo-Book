@@ -217,7 +217,7 @@ def save_analysis_files(result: PhotoBookResult) -> tuple[Path, Path]:
         f"- **Input Folder:** `{result.folder_path}`",
         f"- **Generated At:** `{result.created_at}`",
         f"- **Total Build Time:** `{result.build_duration_seconds}s` ({result.stage_timings})",
-        f"- **Stage Models Used:** Vision=`{result.model_used}` (batch={result.batch_size}, Thinking=`{result.thinking_level}`, Resolution=`{result.media_resolution}` / `{result.analysis_pixel_range}`), Curation=`{result.curation_model_used}`, Hero=`{result.hero_model_used}`, Layout=`{result.layout_model_used}`",
+        f"- **Stage Models Used:** Vision=`{result.model_used}` (batch={result.batch_size}, concurrency={result.concurrency} workers, Thinking=`{result.thinking_level}`, Resolution=`{result.media_resolution}` / `{result.analysis_pixel_range}`), Curation=`{result.curation_model_used}`, Hero=`{result.hero_model_used}`, Layout=`{result.layout_model_used}`",
     ]
     if result.model_note:
         lines.append(f"- **Model Note:** {result.model_note}")

@@ -19,8 +19,9 @@ In addition to the Smart Hybrid pipeline, this branch introduces:
 - **Configurable Page Layout Fill (`high`, `medium`, `low`)**: Allowing users to maximize photo coverage across the 10×10" page with tight margins (down to 0.25") while preventing header/caption overlap.
 - **Tight Aesthetic Smart Cropping (`tight`, `balanced`, `wide`)**: Intelligently trimming peripheral dead space (sky, ground, walls) to emphasize human subjects while guaranteeing 100% face safety.
 - **Photo Captions Toggle (`include_captions`)**: Allowing users to choose whether to render AI-generated story captions under photos or create a clean, minimalist photo-only gallery.
+- **High-Throughput Parallel Concurrency (`concurrency`)**: Configurable parallel workers (up to 20/32 concurrent requests) and 10 photos/call batch processing, eliminating serial bottlenecks to drastically reduce end-to-end vision analysis time across large libraries (500+ photos).
 - **Clean Styling & Dynamic Cover Location**: Removed rigid boilerplate labels (`"CURATED 10×10 INCH PHOTO BOOK"`, `"A Curated 10×10 Photo Book"`) and dates from all pages, and dynamically elevated recognized geographic locations (e.g. `📍 San Juan, Puerto Rico`) to the cover page eyebrow and subtitle.
-- **Dashboard UI Controls**: Direct dropdowns and status badges on the web UI for fill modes, cropping focus, and caption display.
+- **Dashboard UI Controls**: Direct dropdowns and status badges on the web UI for fill modes, cropping focus, caption display, and parallel concurrency.
 
 ---
 
@@ -184,36 +185,68 @@ Earlier builds rendered repetitive boilerplate headers (`"CURATED 10×10 INCH PH
 
 ---
 
-## 8. Dashboard & User Interface Enhancements
+## 8. High-Throughput Parallel Concurrency & Ultra-Fast Batching
+
+### The Problem
+In earlier iterations, vision API requests ran with a hardcoded worker pool (`max_workers = min(6, len(batches))`) and executed a blocking serial probe batch upfront before launching remaining jobs. For large collections (e.g., 500–700+ photos), vision analysis accounted for over 85–90% of the total pipeline run time (~204 seconds out of 232 seconds across 112 batches).
+
+### The Solution
+1. **Configurable Concurrency Engine**:
+   - [`analyze_photos_with_gemini`](../photobook/analyzer.py) accepts a `concurrency: int = 12` parameter (supporting 1 to 32 concurrent requests).
+   - `ThreadPoolExecutor` dynamically scales to `min(effective_concurrency, len(batches))` for batch mode and `min(effective_concurrency, len(remaining_photos))` for single mode.
+2. **Zero-Latency Dispatch (Probe Removal)**:
+   - Eliminated the blocking serial probe batch; all worker requests launch concurrently in parallel from millisecond zero.
+3. **Automatic Exponential Backoff on HTTP 429**:
+   - Added automatic retry with exponential backoff on transient quota/rate limit errors (up to 3 attempts with 2.0s delay), preventing dropped batches under high parallel load.
+4. **Ultra-Fast 10-Photo Batching Option**:
+   - Added `10 Photos / Call (Ultra Fast)` preset alongside `6 Photos / Call (Standard)`, reducing HTTP round-trip overhead by ~40% for large libraries.
+5. **Expected Speedups**:
+   - 668 photos at batch size 6 (112 batches): with 20 parallel workers, runtime drops from ~204s to **~45–60s** (a ~3.5×–4× throughput boost).
+   - At batch size 10 (67 batches) with 20 workers, runtime drops to **~30–40s** (a ~5×–6× throughput boost).
+
+---
+
+## 9. Dashboard & User Interface Enhancements
 
 File: [`static/index.html`](../static/index.html)
 
-1. **Page Layout Fill Selector**:
+1. **Parallel Concurrency Selector**:
+   - Dropdown under Settings:
+     - `20 Concurrent Requests (Blazing Fast)`
+     - `16 Concurrent Requests (High Speed)`
+     - `12 Concurrent Requests (Default / Balanced)`
+     - `8 Concurrent Requests (Moderate)`
+     - `4 Concurrent Requests (Conservative)`
+     - `1 Request (Serial / Debug)`
+2. **Batch Size Selector with 10-Photo Preset**:
+   - Added `10 Photos / Call (Ultra Fast)` option alongside `6 Photos / Call (Standard)` and single-photo mode.
+3. **Page Layout Fill Selector**:
    - Dropdown under Settings:
      - `High (Maximum photo coverage, minimal gaps)` *(Default)*
      - `Medium (Balanced spacing)`
      - `Low (Gallery style, wide white margins)`
-2. **Aesthetic Crop Focus Selector**:
+4. **Aesthetic Crop Focus Selector**:
    - Dropdown under Settings:
      - `Tight (Aesthetic close-up, remove dead space)` *(Default)*
      - `Balanced (Standard balanced framing)`
      - `Wide (Maximum environmental context)`
-3. **Photo Captions Selector**:
+5. **Photo Captions Selector**:
    - Dropdown under Settings:
      - `Include Captions (Story & notes under photos)` *(Default)*
      - `No Captions (Clean photo-only gallery)`
-4. **Live Status Badges**:
+6. **Live Status Badges**:
    - Dashboard summary bar displays active configuration pills:
+     - `Parallel: <N> reqs (batch <B>)`
      - `Fill: High` / `Fill: Medium` / `Fill: Low`
      - `Crop: Tight` / `Crop: Balanced` / `Crop: Wide`
      - `Captions: Yes` / `Captions: No`
      - `Location: <Recognized Destination>` (when available)
-5. **Interactive 3D Viewer & Controls**:
+7. **Interactive 3D Viewer & Controls**:
    - Integrates with the 3D Lay-Flat viewer, book flipping, and autoplay features.
 
 ---
 
-## 9. API and Data Model Changes
+## 10. API and Data Model Changes
 
 ### `app.py`
 - Updated `/api/build` and `/api/build-stream` endpoints:
@@ -228,17 +261,18 @@ File: [`static/index.html`](../static/index.html)
       page_fill_mode: str = "high"       # "low", "medium", "high"
       crop_focus: str = "tight"          # "tight", "balanced", "wide"
       include_captions: bool = True      # True = show captions, False = clean gallery
+      concurrency: int = 12              # 1 to 32 concurrent vision workers
   ```
 
 ### `photobook/models.py`
-- Added `page_fill_mode: str = "high"`, `crop_focus: str = "tight"`, `include_captions: bool = True`, and `location: Optional[str] = None` to `PhotoBookResult`.
+- Added `page_fill_mode: str = "high"`, `crop_focus: str = "tight"`, `include_captions: bool = True`, `location: Optional[str] = None`, and `concurrency: int = 12` to `PhotoBookResult`.
 
 ### `photobook/pipeline.py`
-- `build_photo_book` accepts `include_captions: bool = True`, calls `extract_book_location`, and passes `location` to renderers and `PhotoBookResult`.
+- `build_photo_book` accepts `concurrency: int = 12`, passes it to `analyze_photos_with_gemini`, and records it on `PhotoBookResult`.
 
 ---
 
-## 10. Test Suite & Verification
+## 11. Test Suite & Verification
 
 All changes are covered by comprehensive automated tests in [`tests/test_photobook.py`](../tests/test_photobook.py):
 
@@ -257,26 +291,28 @@ All changes are covered by comprehensive automated tests in [`tests/test_photobo
 4. **`test_remove_curated_and_dates_and_include_location_on_cover`**:
    - Verifies that `"CURATED 10×10 INCH PHOTO BOOK"` and date patterns are completely stripped from HTML and PDF pages.
    - Confirms dynamic detection and rendering of geographic locations on the cover.
+5. **`test_multi_model_and_batch_processing`**:
+   - Verifies batch analysis with custom `concurrency: 16` and confirms result retains configured concurrency metadata.
 
 ### Test Execution
 ```bash
 uv run pytest
-# Output: 13 passed in 1.69s
+# Output: 13 passed in 1.64s
 ```
 
 ---
 
-## 11. Summary of Modified Files on `Gemini-first`
+## 12. Summary of Modified Files on `Gemini-first`
 
 | File | Primary Changes |
 |---|---|
-| [`photobook/analyzer.py`](../photobook/analyzer.py) | Added `coarse_filter_photos`, `deduplicate_and_curate_with_gemini`, `extract_book_location`, `strip_curated_and_dates`, `PAGE_TEMPLATES_BY_FILL`, and `get_page_templates`. |
+| [`photobook/analyzer.py`](../photobook/analyzer.py) | Added configurable `concurrency` pool, removed blocking serial probe batch, added 429 exponential backoff, added `coarse_filter_photos`, `deduplicate_and_curate_with_gemini`, `extract_book_location`, `strip_curated_and_dates`, `PAGE_TEMPLATES_BY_FILL`, and `get_page_templates`. |
 | [`photobook/cropper.py`](../photobook/cropper.py) | Added `crop_focus` parameter (`tight`, `balanced`, `wide`) to `compute_aesthetic_crop` with dead-space removal and face preservation. |
-| [`photobook/pipeline.py`](../photobook/pipeline.py) | Orchestrates Smart Hybrid pipeline, extracts location, and threads options through `build_photo_book`. |
-| [`photobook/models.py`](../photobook/models.py) | Added `page_fill_mode`, `crop_focus`, `include_captions`, and `location` fields to `PhotoBookResult`. |
-| [`app.py`](../app.py) | Exposed options and location on REST endpoints. |
-| [`static/index.html`](../static/index.html) | Removed boilerplate and dates from all pages; displays cover location in eyebrow and subtitle; added live status badges. |
-| [`photobook/renderer.py`](../photobook/renderer.py) | Purged "CURATED 10x10" and dates from PDF and HTML; displays uppercase location on cover eyebrow and subtitle. |
-| [`tests/test_photobook.py`](../tests/test_photobook.py) | Added end-to-end unit tests covering all features and clean styling assertions. |
+| [`photobook/pipeline.py`](../photobook/pipeline.py) | Orchestrates Smart Hybrid pipeline, extracts location, wires `concurrency` parameter, and threads options through `build_photo_book`. |
+| [`photobook/models.py`](../photobook/models.py) | Added `page_fill_mode`, `crop_focus`, `include_captions`, `location`, and `concurrency` fields to `PhotoBookResult`. |
+| [`app.py`](../app.py) | Exposed `concurrency`, layout options, and location on REST endpoints. |
+| [`static/index.html`](../static/index.html) | Added parallel concurrency selector (up to 20 workers), 10-photo batch preset, fill mode, crop focus, captions toggle, and live status badges; removed boilerplate text and dates. |
+| [`photobook/renderer.py`](../photobook/renderer.py) | Purged "CURATED 10x10" and dates from PDF and HTML; displays uppercase location on cover eyebrow and subtitle; logs concurrency in build reports. |
+| [`tests/test_photobook.py`](../tests/test_photobook.py) | Added end-to-end unit tests covering all features, concurrency options, and clean styling assertions. |
 | [`docs/pipeline_flow.md`](pipeline_flow.md) | Updated pipeline diagram and stage descriptions to reflect the Smart Hybrid model. |
 | [`docs/gemini_first_branch_changes.md`](gemini_first_branch_changes.md) | Master documentation file detailing all branch changes. |

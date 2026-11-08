@@ -259,6 +259,7 @@ class PhotoBookResult(BaseModel):
     hero_model_used: str = "gemini-3.8-flash"
     layout_model_used: str = "local_geometric"
     batch_size: int = 6
+    concurrency: int = 12
     build_duration_seconds: float = 0.0
     stage_timings: dict[str, float] = Field(default_factory=dict)
     model_note: Optional[str] = None

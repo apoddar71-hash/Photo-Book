@@ -715,10 +715,11 @@ def analyze_photos_with_gemini(
     thinking_level: str = "medium",
     media_resolution: str = "high",
     batch_size: int = 1,
+    concurrency: int = 12,
     api_key: Optional[str] = None,
     progress_cb: Optional[Callable[[str, int, int], None]] = None,
 ) -> tuple[str, Optional[str]]:
-    """Run deep image analysis on photos using Gemini (supports both single-photo and multi-photo batch mode)."""
+    """Run deep image analysis on photos using Gemini with high-speed parallel request execution."""
     from concurrent.futures import wait as futures_wait, FIRST_COMPLETED
     from dotenv import load_dotenv
 
@@ -785,94 +786,73 @@ def analyze_photos_with_gemini(
         remaining_photos.append(p)
 
     effective_batch_size = max(1, min(10, int(batch_size or 1)))
+    effective_concurrency = max(1, min(32, int(concurrency or 12)))
 
     if remaining_photos and effective_batch_size > 1 and len(remaining_photos) > 1:
         batches = [
             remaining_photos[i : i + effective_batch_size]
             for i in range(0, len(remaining_photos), effective_batch_size)
         ]
-        # Probe the first batch first
-        first_batch = batches[0]
+        pool_workers = min(effective_concurrency, len(batches))
         if progress_cb:
             progress_cb(
-                f"Batch analyzing photos {g_done + 1}–{g_done + len(first_batch)}/{g_total} (batch size={effective_batch_size})...",
+                f"Starting parallel Gemini vision analysis across {len(batches)} batches ({pool_workers} parallel workers, batch size={effective_batch_size})...",
                 max(1, g_done),
                 g_total,
             )
-        try:
-            mapped, used_fb = _call_gemini_vision_batch_api(
-                client=client,
-                batch_photos=first_batch,
-                resolved_model=resolved_model,
-                requested_model=model,
-                thinking_level=thinking_level,
-                media_resolution=media_resolution,
-                prefer_generate_content=prefer_generate_content,
-            )
-            prefer_generate_content = used_fb
-            for bp in first_batch:
-                if bp.photo_id in mapped:
-                    bp.analysis = mapped[bp.photo_id]
-                    _cache_path(bp).write_text(bp.analysis.model_dump_json(), encoding="utf-8")
-            g_done += len(first_batch)
-            batches = batches[1:]
-            if progress_cb:
-                progress_cb(
-                    f"Batch analyzed {g_done}/{g_total} photos ({len(batches)} batch calls remaining)...",
-                    g_done,
-                    g_total,
-                )
-        except Exception as probe_exc:
-            api_errors.append(str(probe_exc))
-            batches = []
 
         def _call_batch(b_photos: list[PhotoMetadata]) -> int:
-            try:
-                mapped_res, _ = _call_gemini_vision_batch_api(
-                    client=client,
-                    batch_photos=b_photos,
-                    resolved_model=resolved_model,
-                    requested_model=model,
-                    thinking_level=thinking_level,
-                    media_resolution=media_resolution,
-                    prefer_generate_content=prefer_generate_content,
-                )
-                for bp in b_photos:
-                    if bp.photo_id in mapped_res:
-                        bp.analysis = mapped_res[bp.photo_id]
-                        _cache_path(bp).write_text(bp.analysis.model_dump_json(), encoding="utf-8")
-                return len(b_photos)
-            except Exception as exc:
-                if len(api_errors) < 3:
-                    api_errors.append(str(exc))
-                return len(b_photos)
+            for attempt in range(2):
+                try:
+                    mapped_res, _ = _call_gemini_vision_batch_api(
+                        client=client,
+                        batch_photos=b_photos,
+                        resolved_model=resolved_model,
+                        requested_model=model,
+                        thinking_level=thinking_level,
+                        media_resolution=media_resolution,
+                        prefer_generate_content=prefer_generate_content,
+                    )
+                    for bp in b_photos:
+                        if bp.photo_id in mapped_res:
+                            bp.analysis = mapped_res[bp.photo_id]
+                            _cache_path(bp).write_text(bp.analysis.model_dump_json(), encoding="utf-8")
+                    return len(b_photos)
+                except Exception as exc:
+                    err_str = str(exc).lower()
+                    if ("429" in err_str or "quota" in err_str or "rate" in err_str) and attempt == 0:
+                        time.sleep(2.0)
+                        continue
+                    if len(api_errors) < 3:
+                        api_errors.append(str(exc))
+                    return len(b_photos)
+            return len(b_photos)
 
-        if batches:
-            executor = ThreadPoolExecutor(max_workers=min(6, len(batches)))
-            try:
-                pending = {executor.submit(_call_batch, b): b for b in batches}
-                while pending:
-                    done_set, not_done_set = futures_wait(pending.keys(), timeout=96.0, return_when=FIRST_COMPLETED)
-                    if not done_set:
-                        for stalled_fut in list(not_done_set):
-                            stalled_fut.cancel()
-                            pending.pop(stalled_fut, None)
-                        break
-                    for fut in done_set:
-                        b_list = pending.pop(fut)
-                        g_done += len(b_list)
-                        try:
-                            fut.result(timeout=1.0)
-                        except Exception:
-                            pass
-                        if progress_cb:
-                            progress_cb(
-                                f"Batch analyzed {min(g_done, g_total)}/{g_total} photos (last: {b_list[-1].filename})",
-                                min(g_done, g_total),
-                                g_total,
-                            )
-            finally:
-                executor.shutdown(wait=False, cancel_futures=True)
+        executor = ThreadPoolExecutor(max_workers=pool_workers)
+        try:
+            pending = {executor.submit(_call_batch, b): b for b in batches}
+            while pending:
+                done_set, not_done_set = futures_wait(pending.keys(), timeout=96.0, return_when=FIRST_COMPLETED)
+                if not done_set:
+                    for stalled_fut in list(not_done_set):
+                        stalled_fut.cancel()
+                        pending.pop(stalled_fut, None)
+                    break
+                for fut in done_set:
+                    b_list = pending.pop(fut)
+                    g_done += len(b_list)
+                    try:
+                        fut.result(timeout=1.0)
+                    except Exception:
+                        pass
+                    if progress_cb:
+                        progress_cb(
+                            f"Parallel analyzed {min(g_done, g_total)}/{g_total} photos ({len(pending)} batches remaining, last: {b_list[-1].filename})",
+                            min(g_done, g_total),
+                            g_total,
+                        )
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
         if api_errors:
             err_msg = f"Gemini API error ({api_errors[0][:160]})."
@@ -882,60 +862,41 @@ def analyze_photos_with_gemini(
 
     # Single-photo mode (batch_size == 1 or only 1 uncached photo)
     if remaining_photos:
-        probe_photo = remaining_photos[0]
+        pool_workers = min(effective_concurrency, len(remaining_photos))
         if progress_cb:
             progress_cb(
-                f"Connecting to Gemini API for photo {g_done + 1}/{g_total} ({probe_photo.filename})...",
+                f"Starting parallel single-photo vision analysis across {len(remaining_photos)} photos ({pool_workers} parallel workers)...",
                 max(1, g_done),
                 g_total,
             )
-        try:
-            parsed, used_fallback = _call_gemini_vision_api(
-                client=client,
-                photo=probe_photo,
-                resolved_model=resolved_model,
-                requested_model=model,
-                thinking_level=thinking_level,
-                media_resolution=media_resolution,
-                schema=schema,
-                prefer_generate_content=prefer_generate_content,
-            )
-            probe_photo.analysis = parsed
-            _cache_path(probe_photo).write_text(parsed.model_dump_json(), encoding="utf-8")
-            prefer_generate_content = used_fallback
-            remaining_photos = remaining_photos[1:]
-            g_done += 1
-            if progress_cb:
-                progress_cb(
-                    f"Gemini analyzed {g_done}/{g_total}: {probe_photo.filename}",
-                    g_done,
-                    g_total,
-                )
-        except Exception as probe_exc:
-            api_errors.append(str(probe_exc))
-            remaining_photos = []
 
-    def _call_one(photo: PhotoMetadata) -> None:
-        cf = _cache_path(photo)
-        try:
-            parsed, _ = _call_gemini_vision_api(
-                client=client,
-                photo=photo,
-                resolved_model=resolved_model,
-                requested_model=model,
-                thinking_level=thinking_level,
-                media_resolution=media_resolution,
-                schema=schema,
-                prefer_generate_content=prefer_generate_content,
-            )
-            photo.analysis = parsed
-            cf.write_text(parsed.model_dump_json(), encoding="utf-8")
-        except Exception as exc:
-            if len(api_errors) < 3:
-                api_errors.append(str(exc))
+        def _call_one(photo: PhotoMetadata) -> None:
+            cf = _cache_path(photo)
+            for attempt in range(2):
+                try:
+                    parsed, _ = _call_gemini_vision_api(
+                        client=client,
+                        photo=photo,
+                        resolved_model=resolved_model,
+                        requested_model=model,
+                        thinking_level=thinking_level,
+                        media_resolution=media_resolution,
+                        schema=schema,
+                        prefer_generate_content=prefer_generate_content,
+                    )
+                    photo.analysis = parsed
+                    cf.write_text(parsed.model_dump_json(), encoding="utf-8")
+                    return
+                except Exception as exc:
+                    err_str = str(exc).lower()
+                    if ("429" in err_str or "quota" in err_str or "rate" in err_str) and attempt == 0:
+                        time.sleep(2.0)
+                        continue
+                    if len(api_errors) < 3:
+                        api_errors.append(str(exc))
+                    return
 
-    if remaining_photos:
-        executor = ThreadPoolExecutor(max_workers=min(10, len(remaining_photos)))
+        executor = ThreadPoolExecutor(max_workers=pool_workers)
         try:
             pending = {executor.submit(_call_one, p): p for p in remaining_photos}
             while pending:
@@ -954,18 +915,18 @@ def analyze_photos_with_gemini(
                         pass
                     if progress_cb:
                         progress_cb(
-                            f"Gemini analyzed {g_done}/{g_total}: {p.filename}",
-                            g_done,
+                            f"Parallel analyzed {min(g_done, g_total)}/{g_total}: {p.filename}",
+                            min(g_done, g_total),
                             g_total,
                         )
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
 
-    if api_errors:
-        err_msg = f"Gemini API error ({api_errors[0][:160]})."
-        model_note = f"{model_note} {err_msg}".strip() if model_note else err_msg
+        if api_errors:
+            err_msg = f"Gemini API error ({api_errors[0][:160]})."
+            model_note = f"{model_note} {err_msg}".strip() if model_note else err_msg
 
-    return resolved_model, model_note
+        return resolved_model, model_note
 
 
 def _text_token_jaccard(a: str, b: str) -> float:
