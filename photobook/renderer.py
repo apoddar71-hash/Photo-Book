@@ -59,11 +59,6 @@ def render_pdf_photobook(result: PhotoBookResult, out_pdf_path: str | Path) -> P
             c.setFillColor(HexColor("#17191E"))
             c.rect(0, 0, PAGE_W, PAGE_H, stroke=0, fill=1)
 
-            # Subtle gold inner border frame (0.32in inset = 3.2%)
-            c.setStrokeColor(HexColor("#C5A46D"))
-            c.setLineWidth(1.0)
-            c.rect(0.32 * inch, 0.32 * inch, 9.36 * inch, 9.36 * inch, stroke=1, fill=0)
-
             # Eyebrow header: display location if available (no "CURATED 10x10" and no dates)
             loc_text = (result.location or "").strip()
             if loc_text:
@@ -99,16 +94,16 @@ def render_pdf_photobook(result: PhotoBookResult, out_pdf_path: str | Path) -> P
                 # Hero caption below hero image (if captions enabled)
                 if result.include_captions and slot.caption:
                     c.setFillColor(HexColor("#E8E2D5"))
-                    c.setFont("Times-Italic", 11)
+                    c.setFont("Times-Italic", 12)
                     clean_hero_cap = strip_curated_and_dates(slot.caption)
                     if clean_hero_cap:
-                        cap_lines = _wrap_text_lines(c, clean_hero_cap, "Times-Italic", 11, 7.8 * inch, max_lines=2)
+                        cap_lines = _wrap_text_lines(c, clean_hero_cap, "Times-Italic", 12, 7.8 * inch, max_lines=2)
                         cur_y = y_pt - 0.32 * inch
                         for ln in cap_lines:
                             c.drawCentredString(PAGE_W / 2.0, cur_y, ln)
-                            cur_y -= 0.19 * inch
+                            cur_y -= 0.20 * inch
 
-            # Subtitle at bottom of cover (well inside the 0.32in bottom border)
+            # Subtitle at bottom of cover (well inside the bottom margins)
             c.setFillColor(HexColor("#C5A46D"))
             c.setFont("Helvetica", 9.5)
             raw_cov_sub = (page.group_caption if result.include_captions else None) or result.subtitle
@@ -126,28 +121,14 @@ def render_pdf_photobook(result: PhotoBookResult, out_pdf_path: str | Path) -> P
         c.setFillColor(HexColor("#FAF7F2"))
         c.rect(0, 0, PAGE_W, PAGE_H, stroke=0, fill=1)
 
-        # Subtle outer trim border (0.32in inset)
-        c.setStrokeColor(HexColor("#E5DEC9"))
-        c.setLineWidth(0.6)
-        c.rect(0.32 * inch, 0.32 * inch, 9.36 * inch, 9.36 * inch, stroke=1, fill=0)
-
-        # Chapter / Cluster Header (1-2 lines max, always finishes above 1.38in; slots start >= 1.60in)
+        # Chapter Title (1 line max, finishes at y=PAGE_H - 0.52in; slots start >= PAGE_H - 1.10in)
         clean_chapter = strip_curated_and_dates(page.chapter_title)
         if clean_chapter:
-            c.setFillColor(HexColor("#8C6D3F"))
-            c.setFont("Helvetica-Bold", 8.0)
-            c.drawString(0.75 * inch, PAGE_H - 0.62 * inch, "CHAPTER")
-            c.setFillColor(HexColor("#1E232A"))
-            c.setFont("Times-Bold", 13.0)
-            ch_lines = _wrap_text_lines(c, clean_chapter, "Times-Bold", 13.0, 8.5 * inch, max_lines=2)
-            ch_y = PAGE_H - 0.84 * inch
-            for ch_ln in ch_lines:
-                c.drawString(0.75 * inch, ch_y, ch_ln)
-                ch_y -= 0.20 * inch
-            c.setStrokeColor(HexColor("#D4C7B0"))
-            c.setLineWidth(0.75)
-            div_y = ch_y + 0.11 * inch
-            c.line(0.75 * inch, div_y, PAGE_W - 0.75 * inch, div_y)
+            c.setFillColor(HexColor("#443C32"))
+            c.setFont("Times-Bold", 12.0)
+            ch_lines = _wrap_text_lines(c, clean_chapter, "Times-Bold", 12.0, 8.8 * inch, max_lines=1)
+            if ch_lines:
+                c.drawString(0.45 * inch, PAGE_H - 0.52 * inch, ch_lines[0])
 
         # Draw each photo slot (1, 2, or 3 max)
         for slot in page.slots:
@@ -171,29 +152,24 @@ def render_pdf_photobook(result: PhotoBookResult, out_pdf_path: str | Path) -> P
                 clean_slot_cap = strip_curated_and_dates(slot.caption)
                 if clean_slot_cap:
                     c.setFillColor(HexColor("#4A4F55"))
-                    c.setFont("Times-Italic", 8.5)
-                    lines = _wrap_text_lines(c, clean_slot_cap, "Times-Italic", 8.5, w_pt - 4, max_lines=2)
-                    sub_y = y_pt - 13
+                    c.setFont("Times-Italic", 9.5)
+                    lines = _wrap_text_lines(c, clean_slot_cap, "Times-Italic", 9.5, w_pt - 4, max_lines=2)
+                    sub_y = y_pt - 14
                     for sub_ln in lines:
                         c.drawString(x_pt + 2, sub_y, sub_ln)
-                        sub_y -= 10.5
+                        sub_y -= 11.5
 
         # Page / Group Caption (1-2 lines max) at bottom of 10x10 page
         if result.include_captions:
             footer_caption = strip_curated_and_dates(page.group_caption or (page.slots[0].caption if page.slots else ""))
             if footer_caption:
                 c.setFillColor(HexColor("#22262C"))
-                c.setFont("Times-Roman", 11)
-                cap_lines = _wrap_text_lines(c, footer_caption, "Times-Roman", 11, 8.2 * inch, max_lines=2)
+                c.setFont("Times-Roman", 12)
+                cap_lines = _wrap_text_lines(c, footer_caption, "Times-Roman", 12, 8.2 * inch, max_lines=2)
                 base_y = 0.92 * inch if len(cap_lines) > 1 else 0.78 * inch
                 for ln in cap_lines:
                     c.drawCentredString(PAGE_W / 2.0, base_y, ln)
-                    base_y -= 0.20 * inch
-
-        # Page number in bottom-right corner
-        c.setFillColor(HexColor("#8A8478"))
-        c.setFont("Helvetica", 8.5)
-        c.drawRightString(PAGE_W - 0.65 * inch, 0.52 * inch, f"Page {page.page_number}")
+                    base_y -= 0.22 * inch
 
         c.showPage()
 
@@ -339,7 +315,6 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
             page_cards_html.append(
                 f"""
                 <section class="book-page cover-page" data-page="{pg.page_number}">
-                  <div class="cover-border"></div>
                   <div class="cover-header">
                     {eyebrow_html}
                     <h1 class="cover-title">{html.escape(clean_title)}</h1>
@@ -382,7 +357,6 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
         chapter_html = (
             f"""
             <div class="page-chapter-header">
-              <span class="chapter-tag">CHAPTER</span>
               <h2>{html.escape(clean_chapter)}</h2>
             </div>
             """
@@ -399,12 +373,10 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
         page_cards_html.append(
             f"""
             <section class="book-page interior-page" data-page="{pg.page_number}">
-              <div class="interior-border"></div>
               {chapter_html}
               {''.join(slots_html)}
               <div class="page-footer">
                 {footer_cap_html}
-                <span class="page-num">Page {pg.page_number}</span>
               </div>
             </section>
             """
@@ -427,7 +399,6 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
             f"""
             <div class="book-spread">
               <section class="book-page endpaper-page">
-                <div class="interior-border"></div>
                 <div class="endpaper-content">
                   <div class="endpaper-eyebrow">LAY-FLAT HARDCOVER EDITION</div>
                   <div class="endpaper-title">{html.escape(clean_end_title)}</div>
@@ -446,7 +417,6 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
             if i + 1 < len(interior_cards)
             else """
             <section class="book-page endpaper-page">
-              <div class="interior-border"></div>
               <div class="endpaper-content">
                 <div class="endpaper-sub">— Finis —</div>
               </div>
@@ -706,10 +676,7 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
     color: #faf7f2;
   }}
   .cover-border {{
-    position: absolute;
-    inset: 3.2%;
-    border: 1px solid #c5a46d;
-    pointer-events: none;
+    display: none;
   }}
   .cover-header {{
     position: absolute;
@@ -748,8 +715,8 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
   .cover-hero-caption {{
     font-family: Georgia, "Times New Roman", serif;
     font-style: italic;
-    font-size: 11px;
-    line-height: 1.25;
+    font-size: 12px;
+    line-height: 1.3;
     color: #e8e2d5;
     margin: 0 0 5px 0;
     display: -webkit-box;
@@ -767,48 +734,34 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
     color: #1e232a;
   }}
   .interior-border {{
-    position: absolute;
-    inset: 3.2%;
-    border: 1px solid #e5dec9;
-    pointer-events: none;
+    display: none;
   }}
   .page-chapter-header {{
     position: absolute;
-    top: 4.8%;
-    left: 7.5%;
-    right: 7.5%;
-    border-bottom: 1px solid #d4c7b0;
-    padding-bottom: 3px;
+    top: 2.2%;
+    left: 4.5%;
+    right: 4.5%;
+    border-bottom: none;
+    padding-bottom: 0;
     z-index: 5;
+    pointer-events: none;
   }}
   .chapter-tag {{
-    font-size: 8.5px;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    line-height: 1.1;
-    color: #8c6d3f;
-    display: block;
+    display: none;
   }}
   .page-chapter-header h2 {{
     font-family: Georgia, "Times New Roman", serif;
-    font-size: 13px;
-    line-height: 1.2;
-    margin: 2px 0 0 0;
-    color: #1e232a;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.15;
+    margin: 0;
+    color: #443c32;
+    white-space: nowrap;
     overflow: hidden;
+    text-overflow: ellipsis;
   }}
   .page-running-head {{
-    position: absolute;
-    top: 4.5%;
-    left: 7.5%;
-    font-family: Georgia, "Times New Roman", serif;
-    font-style: italic;
-    font-size: 10.5px;
-    color: #8a8478;
-    z-index: 5;
+    display: none;
   }}
   .photo-slot {{
     position: absolute;
@@ -836,8 +789,8 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
     top: calc(100% + 4px);
     font-family: Georgia, "Times New Roman", serif;
     font-style: italic;
-    font-size: 9.5px;
-    line-height: 1.18;
+    font-size: 10.5px;
+    line-height: 1.2;
     color: #4a4f55;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -856,8 +809,8 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
   }}
   .page-group-caption {{
     font-family: Georgia, "Times New Roman", serif;
-    font-size: 11px;
-    line-height: 1.3;
+    font-size: 12px;
+    line-height: 1.35;
     color: #22262c;
     margin: 0;
     display: -webkit-box;
@@ -866,11 +819,7 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
     overflow: hidden;
   }}
   .page-num {{
-    position: absolute;
-    right: 0;
-    bottom: -4px;
-    font-size: 10px;
-    color: #8a8478;
+    display: none;
   }}
   @media print {{
     body {{ background: none; padding: 0; }}

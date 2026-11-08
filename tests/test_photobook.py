@@ -765,5 +765,43 @@ def test_all_photos_cached_returns_model_tuple(tmp_path: Path) -> None:
     assert "cache" in model_note.lower()
 
 
+def test_styling_cleanups_no_page_numbers_or_borders_or_chapter_tag(tmp_path: Path) -> None:
+    """Verify that page numbers, 'CHAPTER' tag, and outer line borders are removed,
+    and caption font sizes are increased."""
+    test_folder = _create_raw_photos_test_folder(tmp_path / "raw_photos")
+    out_root = tmp_path / "out_cleanups"
+
+    result = build_photo_book(
+        folder_path=test_folder,
+        output_root=out_root,
+        include_captions=True,
+    )
+
+    html_text = Path(result.html_preview_path).read_text(encoding="utf-8")
+
+    # 1. Page numbers removed
+    assert '<span class="page-num">' not in html_text
+    assert "Page 1" not in html_text
+
+    # 2. 'CHAPTER' eyebrow tag removed
+    assert '<span class="chapter-tag">' not in html_text
+    assert ">CHAPTER<" not in html_text
+
+    # 3. Outer line borders removed
+    assert '<div class="interior-border">' not in html_text
+    assert '<div class="cover-border">' not in html_text
+
+    # 4. Increased caption font in CSS
+    assert "font-size: 12px" in html_text or "font-size: 10.5px" in html_text
+
+    # 5. Verify index.html rules
+    index_html = (Path(__file__).parent.parent / "static" / "index.html").read_text(encoding="utf-8")
+    assert ".page-trim-border {\n    display: none;" in index_html
+    assert ".page-number-tag {\n    display: none;" in index_html
+    assert "font-size: 10.5px;" in index_html
+    assert "font-size: 12px;" in index_html
+
+
+
 
 
