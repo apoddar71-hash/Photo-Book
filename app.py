@@ -85,6 +85,10 @@ class BuildRequest(BaseModel):
         default="tight",
         description="Aesthetic crop focus: 'tight', 'balanced', or 'wide'",
     )
+    caption_mode: str = Field(
+        default="page_only",
+        description="Caption placement mode: 'page_only' (bottom of page only), 'all' (individual photo notes + bottom of page), or 'none'",
+    )
     include_captions: bool = Field(
         default=True,
         description="Whether to render captions under photos in the book ('true' or 'false')",
@@ -139,6 +143,9 @@ def get_config() -> dict:
 def build_book_endpoint(req: BuildRequest) -> PhotoBookResult:
     try:
         _persist_api_key_if_provided(req.api_key)
+        eff_caption_mode = req.caption_mode
+        if not req.include_captions:
+            eff_caption_mode = "none"
         result = build_photo_book(
             folder_path=req.folder_path,
             output_root=OUTPUT_ROOT,
@@ -155,7 +162,8 @@ def build_book_endpoint(req: BuildRequest) -> PhotoBookResult:
             max_book_photos=req.max_book_photos,
             page_fill_mode=req.page_fill_mode,
             crop_focus=req.crop_focus,
-            include_captions=req.include_captions,
+            caption_mode=eff_caption_mode,
+            include_captions=(eff_caption_mode != "none"),
             api_key=req.api_key,
         )
         _BOOKS[result.book_id] = result
@@ -195,6 +203,9 @@ def build_book_stream_endpoint(req: BuildRequest) -> StreamingResponse:
     def _worker() -> None:
         try:
             _persist_api_key_if_provided(req.api_key)
+            eff_caption_mode = req.caption_mode
+            if not req.include_captions:
+                eff_caption_mode = "none"
             result = build_photo_book(
                 folder_path=req.folder_path,
                 output_root=OUTPUT_ROOT,
@@ -211,7 +222,8 @@ def build_book_stream_endpoint(req: BuildRequest) -> StreamingResponse:
                 max_book_photos=req.max_book_photos,
                 page_fill_mode=req.page_fill_mode,
                 crop_focus=req.crop_focus,
-                include_captions=req.include_captions,
+                caption_mode=eff_caption_mode,
+                include_captions=(eff_caption_mode != "none"),
                 api_key=req.api_key,
                 progress_cb=_progress,
             )

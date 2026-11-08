@@ -53,6 +53,10 @@ def render_pdf_photobook(result: PhotoBookResult, out_pdf_path: str | Path) -> P
     c.setTitle(f"{result.title} — 10x10 Photo Book")
     c.setAuthor("Gemini 3.8 Flash Photo Book Builder")
 
+    cap_mode = getattr(result, "caption_mode", "all" if result.include_captions else "none")
+    show_caps = result.include_captions and cap_mode != "none"
+    show_slot_caps = show_caps and cap_mode != "page_only"
+
     for page in result.pages:
         if page.page_type == "cover":
             # Dark charcoal luxury cover background
@@ -92,21 +96,21 @@ def render_pdf_photobook(result: PhotoBookResult, out_pdf_path: str | Path) -> P
                     c.drawImage(str(img_file), x_pt, y_pt, width=w_pt, height=h_pt, preserveAspectRatio=False)
 
                 # Hero caption below hero image (if captions enabled)
-                if result.include_captions and slot.caption:
+                if show_caps and slot.caption:
                     c.setFillColor(HexColor("#E8E2D5"))
-                    c.setFont("Times-Italic", 12)
+                    c.setFont("Times-Italic", 11)
                     clean_hero_cap = strip_curated_and_dates(slot.caption)
                     if clean_hero_cap:
-                        cap_lines = _wrap_text_lines(c, clean_hero_cap, "Times-Italic", 12, 7.8 * inch, max_lines=2)
+                        cap_lines = _wrap_text_lines(c, clean_hero_cap, "Times-Italic", 11, 7.8 * inch, max_lines=2)
                         cur_y = y_pt - 0.32 * inch
                         for ln in cap_lines:
                             c.drawCentredString(PAGE_W / 2.0, cur_y, ln)
-                            cur_y -= 0.20 * inch
+                            cur_y -= 0.19 * inch
 
             # Subtitle at bottom of cover (well inside the bottom margins)
             c.setFillColor(HexColor("#C5A46D"))
             c.setFont("Helvetica", 9.5)
-            raw_cov_sub = (page.group_caption if result.include_captions else None) or result.subtitle
+            raw_cov_sub = (page.group_caption if show_caps else None) or result.subtitle
             cov_sub = strip_curated_and_dates(raw_cov_sub)
             if not cov_sub and loc_text:
                 cov_sub = f"📍 {loc_text}"
@@ -121,14 +125,14 @@ def render_pdf_photobook(result: PhotoBookResult, out_pdf_path: str | Path) -> P
         c.setFillColor(HexColor("#FAF7F2"))
         c.rect(0, 0, PAGE_W, PAGE_H, stroke=0, fill=1)
 
-        # Chapter Title (1 line max, finishes at y=PAGE_H - 0.52in; slots start >= PAGE_H - 1.10in)
+        # Chapter Title (placed aesthetically below top margin, well above slots >= PAGE_H - 1.10in)
         clean_chapter = strip_curated_and_dates(page.chapter_title)
         if clean_chapter:
             c.setFillColor(HexColor("#443C32"))
             c.setFont("Times-Bold", 12.0)
             ch_lines = _wrap_text_lines(c, clean_chapter, "Times-Bold", 12.0, 8.8 * inch, max_lines=1)
             if ch_lines:
-                c.drawString(0.45 * inch, PAGE_H - 0.52 * inch, ch_lines[0])
+                c.drawString(0.55 * inch, PAGE_H - 0.65 * inch, ch_lines[0])
 
         # Draw each photo slot (1, 2, or 3 max)
         for slot in page.slots:
@@ -147,29 +151,29 @@ def render_pdf_photobook(result: PhotoBookResult, out_pdf_path: str | Path) -> P
             if img_file.exists():
                 c.drawImage(str(img_file), x_pt, y_pt, width=w_pt, height=h_pt, preserveAspectRatio=False)
 
-            # Individual slot caption (up to 2 lines; fits cleanly inside the gap)
-            if result.include_captions and len(page.slots) > 1 and slot.caption:
+            # Individual slot caption (if full captions enabled; fits cleanly inside the gap)
+            if show_slot_caps and len(page.slots) > 1 and slot.caption:
                 clean_slot_cap = strip_curated_and_dates(slot.caption)
                 if clean_slot_cap:
                     c.setFillColor(HexColor("#4A4F55"))
-                    c.setFont("Times-Italic", 9.5)
-                    lines = _wrap_text_lines(c, clean_slot_cap, "Times-Italic", 9.5, w_pt - 4, max_lines=2)
-                    sub_y = y_pt - 14
+                    c.setFont("Times-Italic", 8.5)
+                    lines = _wrap_text_lines(c, clean_slot_cap, "Times-Italic", 8.5, w_pt - 4, max_lines=2)
+                    sub_y = y_pt - 12
                     for sub_ln in lines:
                         c.drawString(x_pt + 2, sub_y, sub_ln)
-                        sub_y -= 11.5
+                        sub_y -= 10.0
 
         # Page / Group Caption (1-2 lines max) at bottom of 10x10 page
-        if result.include_captions:
+        if show_caps:
             footer_caption = strip_curated_and_dates(page.group_caption or (page.slots[0].caption if page.slots else ""))
             if footer_caption:
                 c.setFillColor(HexColor("#22262C"))
-                c.setFont("Times-Roman", 12)
-                cap_lines = _wrap_text_lines(c, footer_caption, "Times-Roman", 12, 8.2 * inch, max_lines=2)
-                base_y = 0.92 * inch if len(cap_lines) > 1 else 0.78 * inch
+                c.setFont("Times-Roman", 11)
+                cap_lines = _wrap_text_lines(c, footer_caption, "Times-Roman", 11, 8.2 * inch, max_lines=2)
+                base_y = 0.88 * inch if len(cap_lines) > 1 else 0.74 * inch
                 for ln in cap_lines:
                     c.drawCentredString(PAGE_W / 2.0, base_y, ln)
-                    base_y -= 0.22 * inch
+                    base_y -= 0.20 * inch
 
         c.showPage()
 
@@ -283,6 +287,10 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
         b64 = base64.b64encode(p.read_bytes()).decode("utf-8")
         return f"data:image/jpeg;base64,{b64}"
 
+    cap_mode = getattr(result, "caption_mode", "all" if result.include_captions else "none")
+    show_caps = result.include_captions and cap_mode != "none"
+    show_slot_caps = show_caps and cap_mode != "page_only"
+
     page_cards_html: list[str] = []
     for pg in result.pages:
         if pg.page_type == "cover":
@@ -297,10 +305,10 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
             clean_hero_cap = strip_curated_and_dates(slot.caption)
             hero_cap_html = (
                 f'<p class="cover-hero-caption">{html.escape(clean_hero_cap)}</p>'
-                if (result.include_captions and clean_hero_cap)
+                if (show_caps and clean_hero_cap)
                 else ""
             )
-            raw_cov_sub = (pg.group_caption if result.include_captions else None) or result.subtitle
+            raw_cov_sub = (pg.group_caption if show_caps else None) or result.subtitle
             cov_sub = strip_curated_and_dates(raw_cov_sub)
             if not cov_sub and loc_text:
                 cov_sub = f"📍 {loc_text}"
@@ -341,7 +349,7 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
             clean_slot_cap = strip_curated_and_dates(slot.caption)
             subcap = (
                 f'<div class="slot-subcaption">{html.escape(clean_slot_cap)}</div>'
-                if result.include_captions and len(pg.slots) > 1 and clean_slot_cap
+                if show_slot_caps and len(pg.slots) > 1 and clean_slot_cap
                 else ""
             )
             slots_html.append(
@@ -363,7 +371,7 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
             if clean_chapter
             else ""
         )
-        raw_footer = (pg.group_caption or (pg.slots[0].caption if pg.slots else "")) if result.include_captions else ""
+        raw_footer = (pg.group_caption or (pg.slots[0].caption if pg.slots else "")) if show_caps else ""
         footer_cap = strip_curated_and_dates(raw_footer)
         footer_cap_html = (
             f'<p class="page-group-caption">{html.escape(footer_cap)}</p>'
@@ -715,8 +723,8 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
   .cover-hero-caption {{
     font-family: Georgia, "Times New Roman", serif;
     font-style: italic;
-    font-size: 12px;
-    line-height: 1.3;
+    font-size: 11px;
+    line-height: 1.25;
     color: #e8e2d5;
     margin: 0 0 5px 0;
     display: -webkit-box;
@@ -738,9 +746,9 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
   }}
   .page-chapter-header {{
     position: absolute;
-    top: 2.2%;
-    left: 4.5%;
-    right: 4.5%;
+    top: 4.5%;
+    left: 5.5%;
+    right: 5.5%;
     border-bottom: none;
     padding-bottom: 0;
     z-index: 5;
@@ -786,12 +794,12 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
     position: absolute;
     left: 2px;
     right: 2px;
-    top: calc(100% + 4px);
+    top: calc(100% + 3px);
     font-family: Georgia, "Times New Roman", serif;
     font-style: italic;
-    font-size: 10.5px;
-    line-height: 1.2;
-    color: #4a4f55;
+    font-size: 9.0px;
+    line-height: 1.15;
+    color: #555b63;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -801,16 +809,16 @@ def render_html_photobook(result: PhotoBookResult, out_html_path: str | Path) ->
   }}
   .page-footer {{
     position: absolute;
-    bottom: 4.8%;
-    left: 8%;
-    right: 8%;
+    bottom: 3.5%;
+    left: 6%;
+    right: 6%;
     text-align: center;
     z-index: 5;
   }}
   .page-group-caption {{
     font-family: Georgia, "Times New Roman", serif;
-    font-size: 12px;
-    line-height: 1.35;
+    font-size: 11px;
+    line-height: 1.3;
     color: #22262c;
     margin: 0;
     display: -webkit-box;

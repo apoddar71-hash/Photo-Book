@@ -470,9 +470,9 @@
   }
   .page-header-box {
     position: absolute;
-    top: 2.2%;
-    left: 4.5%;
-    right: 4.5%;
+    top: 4.5%;
+    left: 5.5%;
+    right: 5.5%;
     z-index: 5;
     pointer-events: none;
     max-height: 7.5%;
@@ -556,12 +556,12 @@
     position: absolute;
     left: 2px;
     right: 2px;
-    top: calc(100% + 4px);
+    top: calc(100% + 3px);
     font-family: Georgia, "Times New Roman", serif;
     font-style: italic;
-    font-size: 10.5px;
-    line-height: 1.2;
-    color: #4a4f55;
+    font-size: 9.0px;
+    line-height: 1.15;
+    color: #555b63;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -571,9 +571,9 @@
   }
   .page-footer-box {
     position: absolute;
-    bottom: 4.8%;
-    left: 8%;
-    right: 8%;
+    bottom: 3.5%;
+    left: 6%;
+    right: 6%;
     text-align: center;
     z-index: 5;
   }
@@ -582,8 +582,8 @@
   }
   .page-caption-text {
     font-family: Georgia, "Times New Roman", serif;
-    font-size: 12px;
-    line-height: 1.35;
+    font-size: 11px;
+    line-height: 1.3;
     margin: 0;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -1056,8 +1056,9 @@
         <div style="margin-bottom: 14px;">
           <label for="captionsSelect">Photo Captions</label>
           <select id="captionsSelect">
-            <option value="true" selected>Include Captions (Story &amp; notes under photos)</option>
-            <option value="false">No Captions (Clean photo-only gallery)</option>
+            <option value="page_only" selected>📖 Page Bottom Only (Shared story at bottom, clean photos)</option>
+            <option value="all">📝 Full Captions (Individual photo notes + page bottom story)</option>
+            <option value="none">✨ No Captions (Clean photo-only gallery)</option>
           </select>
         </div>
 
@@ -1572,7 +1573,8 @@
         max_book_photos: parseInt(document.getElementById('maxPhotosSelect').value, 10),
         page_fill_mode: document.getElementById('pageFillSelect').value,
         crop_focus: document.getElementById('cropFocusSelect').value,
-        include_captions: document.getElementById('captionsSelect').value === 'true',
+        caption_mode: document.getElementById('captionsSelect').value,
+        include_captions: document.getElementById('captionsSelect').value !== 'none',
         api_key: document.getElementById('apiKeyInput').value.trim() || null,
       };
       const res = await fetch('/api/build-stream', {
@@ -1663,7 +1665,7 @@
       <div class="stat-pill"><b>Parallel:</b> ${book.concurrency || 12} reqs (batch ${book.batch_size || 6})</div>
       <div class="stat-pill"><b>Fill:</b> ${escapeHtml(book.page_fill_mode || 'high')}</div>
       <div class="stat-pill"><b>Crop:</b> ${escapeHtml(book.crop_focus || 'tight')}</div>
-      <div class="stat-pill"><b>Captions:</b> ${book.include_captions !== false ? 'Yes' : 'No'}</div>
+      <div class="stat-pill"><b>Captions:</b> ${escapeHtml(book.caption_mode === 'page_only' ? 'Page Bottom Only' : (book.caption_mode === 'none' || book.include_captions === false ? 'None' : 'Full'))}</div>
       ${book.location ? `<div class="stat-pill" style="border-color:var(--gold);"><b>Location:</b> ${escapeHtml(book.location)}</div>` : ''}
       <div class="stat-pill"><b>${book.hero_cover_photo_id}</b> Hero Cover</div>
     `;
@@ -1765,7 +1767,9 @@
         </div>
       `;
     }
-    const showCaps = currentBook.include_captions !== false;
+    const captionMode = currentBook.caption_mode || (currentBook.include_captions !== false ? 'all' : 'none');
+    const showCaps = captionMode !== 'none' && currentBook.include_captions !== false;
+    const showSlotCaps = showCaps && captionMode !== 'page_only';
     if (pg.page_type === 'cover') {
       const s = pg.slots[0];
       const cleanTitle = stripCuratedAndDates(pg.chapter_title || currentBook.title);
@@ -1801,7 +1805,7 @@
       <div class="slot-box" style="left:${s.x_in*10}%;top:${s.y_in*10}%;width:${s.width_in*10}%;height:${s.height_in*10}%;">
         <img src="${baseUrl}/${s.cropped_image_relpath}" alt="${escapeHtml(s.filename)}" />
         <div class="slot-badge">Slot ${idx + 1} (${s.width_in}×${s.height_in}in) • Faces: ${s.faces_count} (${s.faces_preserved ? 'Safe' : 'Adjusted'})</div>
-        ${showCaps && pg.slots.length > 1 && s.caption ? `<div class="slot-individual-cap">${escapeHtml(stripCuratedAndDates(s.caption))}</div>` : ''}
+        ${showSlotCaps && pg.slots.length > 1 && s.caption ? `<div class="slot-individual-cap">${escapeHtml(stripCuratedAndDates(s.caption))}</div>` : ''}
       </div>
     `).join('');
 
@@ -1814,7 +1818,7 @@
 
     const rawFooter = showCaps ? (pg.group_caption || (pg.slots[0] ? pg.slots[0].caption : '')) : '';
     const footerCap = stripCuratedAndDates(rawFooter);
-    const footerCapHtml = footerCap ? `<p class="page-caption-text" style="font-size:12px;">${escapeHtml(footerCap)}</p>` : '';
+    const footerCapHtml = footerCap ? `<p class="page-caption-text" style="font-size:11px;">${escapeHtml(footerCap)}</p>` : '';
     return `
       <div class="square-page interior ${leafSideClass} ${overlayClass}">
         ${headerHtml}

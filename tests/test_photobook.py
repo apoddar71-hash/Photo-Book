@@ -791,15 +791,39 @@ def test_styling_cleanups_no_page_numbers_or_borders_or_chapter_tag(tmp_path: Pa
     assert '<div class="interior-border">' not in html_text
     assert '<div class="cover-border">' not in html_text
 
-    # 4. Increased caption font in CSS
-    assert "font-size: 12px" in html_text or "font-size: 10.5px" in html_text
+    # 4. Reduced caption font in CSS to prevent overlap
+    assert "font-size: 11px" in html_text or "font-size: 9.0px" in html_text
 
     # 5. Verify index.html rules
     index_html = (Path(__file__).parent.parent / "static" / "index.html").read_text(encoding="utf-8")
     assert ".page-trim-border {\n    display: none;" in index_html
     assert ".page-number-tag {\n    display: none;" in index_html
-    assert "font-size: 10.5px;" in index_html
-    assert "font-size: 12px;" in index_html
+    assert "font-size: 9.0px;" in index_html
+    assert "font-size: 11px;" in index_html
+    assert "top: 4.5%;" in index_html
+
+
+def test_caption_mode_page_only_suppresses_individual_slots(tmp_path: Path) -> None:
+    """Verify caption_mode='page_only' keeps bottom page captions but hides individual photo captions."""
+    test_folder = _create_raw_photos_test_folder(tmp_path / "raw_photos")
+    out_root = tmp_path / "out_page_only"
+
+    result = build_photo_book(
+        folder_path=test_folder,
+        output_root=out_root,
+        caption_mode="page_only",
+    )
+    assert result.caption_mode == "page_only"
+    assert result.include_captions is True
+
+    html_text = Path(result.html_preview_path).read_text(encoding="utf-8")
+    # Slot subcaptions should not be generated
+    assert '<div class="slot-subcaption">' not in html_text
+    # Page group caption should still be present
+    assert '<p class="page-group-caption">' in html_text
+
+    pdf_bytes = Path(result.pdf_path).read_bytes()
+    assert pdf_bytes.startswith(b"%PDF-")
 
 
 
